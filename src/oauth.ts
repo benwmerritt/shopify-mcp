@@ -17,7 +17,12 @@ const DEFAULT_SCOPES = [
   "read_customers",
   "write_customers",
   "read_orders",
-  "write_orders"
+  "write_orders",
+  "read_inventory",
+  "write_inventory",
+  "read_locations",
+  "read_content",
+  "write_content"
 ].join(",");
 
 export interface TokenData {
