@@ -5,7 +5,8 @@ import { z } from "zod";
 // Input schema for getOrders
 const GetOrdersInputSchema = z.object({
   status: z.enum(["any", "open", "closed", "cancelled"]).default("any"),
-  limit: z.number().default(10)
+  limit: z.number().default(10),
+  cursor: z.string().optional().describe("Pagination cursor for fetching next page")
 });
 
 type GetOrdersInput = z.infer<typeof GetOrdersInputSchema>;
@@ -34,8 +35,12 @@ const getOrders = {
       }
 
       const query = gql`
-        query GetOrders($first: Int!, $query: String) {
-          orders(first: $first, query: $query) {
+        query GetOrders($first: Int!, $query: String, $cursor: String) {
+          orders(first: $first, query: $query, after: $cursor) {
+            pageInfo {
+              hasNextPage
+              endCursor
+            }
             edges {
               node {
                 id
@@ -112,7 +117,8 @@ const getOrders = {
 
       const variables = {
         first: limit,
-        query: queryFilter || undefined
+        query: queryFilter || undefined,
+        cursor: input.cursor
       };
 
       const data = (await shopifyClient.request(query, variables)) as {
@@ -166,7 +172,13 @@ const getOrders = {
         };
       });
 
-      return { orders };
+      return {
+        orders,
+        pageInfo: {
+          hasNextPage: data.orders.pageInfo.hasNextPage,
+          endCursor: data.orders.pageInfo.endCursor
+        }
+      };
     } catch (error) {
       console.error("Error fetching orders:", error);
       throw new Error(

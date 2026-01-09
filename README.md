@@ -12,7 +12,9 @@ MCP server for Shopify's Admin GraphQL API. Built to let agents read and manage 
 - Orders: list, fetch, and update
 - Customers: list, update, and fetch order history
 - Inventory: query levels and adjust quantities
-- Metafields + redirects: read/delete metafields, manage URL redirects
+- Locations: list store locations for inventory operations
+- Metafields: read, create, update, and delete custom data
+- URL redirects: manage URL redirects
 - OAuth flow: authorize once, store tokens locally, and reuse
 
 ## Requirements
@@ -101,7 +103,7 @@ MYSHOPIFY_DOMAIN=your-store.myshopify.com
 # SHOPIFY_SCOPES=comma,separated,scopes
 ```
 
-## Tool catalog (28 total)
+## Tool catalog (30 total)
 
 ### Products
 - `get-products` (supports `fields`: `slim | standard | full | []`)
@@ -123,12 +125,12 @@ MYSHOPIFY_DOMAIN=your-store.myshopify.com
 - `delete-collection`
 
 ### Customers
-- `get-customers`
+- `get-customers` (supports pagination via `cursor`)
 - `update-customer`
-- `get-customer-orders`
+- `get-customer-orders` (supports pagination via `cursor`)
 
 ### Orders
-- `get-orders`
+- `get-orders` (supports pagination via `cursor`)
 - `get-order-by-id`
 - `update-order`
 
@@ -136,8 +138,12 @@ MYSHOPIFY_DOMAIN=your-store.myshopify.com
 - `get-inventory-levels`
 - `update-inventory`
 
+### Locations
+- `get-locations`
+
 ### Metafields
 - `get-metafields`
+- `set-metafield` (create or update)
 - `delete-metafield`
 
 ### URL redirects

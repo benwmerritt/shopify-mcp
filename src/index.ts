@@ -35,6 +35,8 @@ import { getInventoryLevels } from "./tools/getInventoryLevels.js";
 import { updateInventory } from "./tools/updateInventory.js";
 import { getMetafields } from "./tools/getMetafields.js";
 import { deleteMetafield } from "./tools/deleteMetafield.js";
+import { setMetafield } from "./tools/setMetafield.js";
+import { getLocations } from "./tools/getLocations.js";
 import { getRedirects } from "./tools/getRedirects.js";
 import { createRedirect } from "./tools/createRedirect.js";
 import { deleteRedirect } from "./tools/deleteRedirect.js";
@@ -102,6 +104,8 @@ async function startServer(accessToken: string, domain: string): Promise<void> {
   updateInventory.initialize(shopifyClient);
   getMetafields.initialize(shopifyClient);
   deleteMetafield.initialize(shopifyClient);
+  setMetafield.initialize(shopifyClient);
+  getLocations.initialize(shopifyClient);
   getRedirects.initialize(shopifyClient);
   createRedirect.initialize(shopifyClient);
   deleteRedirect.initialize(shopifyClient);
@@ -150,7 +154,8 @@ async function startServer(accessToken: string, domain: string): Promise<void> {
     "get-customers",
     {
       searchQuery: z.string().optional(),
-      limit: z.number().default(10)
+      limit: z.number().default(10),
+      cursor: z.string().optional().describe("Pagination cursor for fetching next page")
     },
     async (args) => {
       const result = await getCustomers.execute(args);
@@ -164,7 +169,8 @@ async function startServer(accessToken: string, domain: string): Promise<void> {
     "get-orders",
     {
       status: z.enum(["any", "open", "closed", "cancelled"]).default("any"),
-      limit: z.number().default(10)
+      limit: z.number().default(10),
+      cursor: z.string().optional().describe("Pagination cursor for fetching next page")
     },
     async (args) => {
       const result = await getOrders.execute(args);
@@ -246,7 +252,8 @@ async function startServer(accessToken: string, domain: string): Promise<void> {
         .string()
         .regex(/^\d+$/, "Customer ID must be numeric")
         .describe("Shopify customer ID, numeric excluding gid prefix"),
-      limit: z.number().default(10)
+      limit: z.number().default(10),
+      cursor: z.string().optional().describe("Pagination cursor for fetching next page")
     },
     async (args) => {
       const result = await getCustomerOrders.execute(args);
@@ -682,6 +689,79 @@ async function startServer(accessToken: string, domain: string): Promise<void> {
     },
     async (args) => {
       const result = await deleteMetafield.execute(args);
+      return {
+        content: [{ type: "text", text: JSON.stringify(result) }]
+      };
+    }
+  );
+
+  // Set metafield (create or update)
+  server.tool(
+    "set-metafield",
+    {
+      ownerId: z.string().min(1).describe("ID of the resource to set metafield on (Product, Customer, Order, etc.)"),
+      ownerType: z.enum(["PRODUCT", "PRODUCTVARIANT", "CUSTOMER", "ORDER", "COLLECTION", "SHOP"]).describe("Type of resource"),
+      namespace: z.string().min(1).describe("Metafield namespace (e.g., 'custom', 'my_app')"),
+      key: z.string().min(1).describe("Metafield key"),
+      value: z.string().describe("Metafield value (JSON string for complex types)"),
+      type: z.enum([
+        "single_line_text_field",
+        "multi_line_text_field",
+        "rich_text_field",
+        "number_integer",
+        "number_decimal",
+        "boolean",
+        "date",
+        "date_time",
+        "json",
+        "weight",
+        "dimension",
+        "volume",
+        "money",
+        "rating",
+        "url",
+        "color",
+        "product_reference",
+        "variant_reference",
+        "collection_reference",
+        "file_reference",
+        "page_reference",
+        "metaobject_reference",
+        "list.single_line_text_field",
+        "list.number_integer",
+        "list.number_decimal",
+        "list.date",
+        "list.date_time",
+        "list.url",
+        "list.color",
+        "list.product_reference",
+        "list.variant_reference",
+        "list.collection_reference",
+        "list.file_reference",
+        "list.page_reference",
+        "list.metaobject_reference"
+      ]).default("single_line_text_field").describe("Metafield type (determines how value is stored and validated)")
+    },
+    async (args) => {
+      const result = await setMetafield.execute(args);
+      return {
+        content: [{ type: "text", text: JSON.stringify(result) }]
+      };
+    }
+  );
+
+  // ==================== LOCATION TOOLS ====================
+
+  // Get locations
+  server.tool(
+    "get-locations",
+    {
+      includeInactive: z.boolean().default(false).describe("Include inactive locations"),
+      includeLegacy: z.boolean().default(false).describe("Include legacy locations"),
+      limit: z.number().default(50).describe("Maximum number of locations to return")
+    },
+    async (args) => {
+      const result = await getLocations.execute(args);
       return {
         content: [{ type: "text", text: JSON.stringify(result) }]
       };
