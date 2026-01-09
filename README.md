@@ -8,6 +8,7 @@ A Model Context Protocol (MCP) server that connects agents to the Shopify Admin 
 ## Highlights
 
 - CRUD for products, collections, orders, and customers
+- Draft orders for quotes, manual orders, and B2B pricing
 - Inventory and location lookups for stock workflows
 - Metafields for custom data
 - URL redirects management
@@ -47,6 +48,7 @@ Optional: override scopes with `--scopes` or `SHOPIFY_SCOPES`.
    - `read_products`, `write_products`
    - `read_customers`, `write_customers`
    - `read_orders`, `write_orders`
+   - `read_draft_orders`, `write_draft_orders`
    - `read_inventory`, `write_inventory`
    - `read_locations`
    - `read_content`, `write_content`
@@ -127,6 +129,13 @@ MYSHOPIFY_DOMAIN=your-store.myshopify.com
 - `get-orders` (supports pagination via `cursor`)
 - `get-order-by-id`
 - `update-order`
+
+### Draft Orders
+- `get-draft-orders` (supports pagination via `cursor`)
+- `get-draft-order-by-id`
+- `create-draft-order`
+- `update-draft-order`
+- `complete-draft-order`
 
 ### Inventory
 - `get-inventory-levels`
