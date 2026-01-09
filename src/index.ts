@@ -245,16 +245,47 @@ async function startServer(accessToken: string, domain: string): Promise<void> {
     }
   );
 
-  // Add the createProduct tool
+  // Add the createProduct tool (enhanced with variants, pricing, images)
   server.tool(
     "create-product",
     {
+      // Basic product fields
       title: z.string().min(1),
       descriptionHtml: z.string().optional(),
       vendor: z.string().optional(),
       productType: z.string().optional(),
       tags: z.array(z.string()).optional(),
       status: z.enum(["ACTIVE", "DRAFT", "ARCHIVED"]).default("DRAFT"),
+
+      // Simple product fields (when no variants)
+      price: z.string().optional(),
+      compareAtPrice: z.string().optional(),
+      sku: z.string().optional(),
+      barcode: z.string().optional(),
+      inventoryQuantity: z.number().optional(),
+      weight: z.number().optional(),
+      weightUnit: z.enum(["KILOGRAMS", "GRAMS", "POUNDS", "OUNCES"]).optional(),
+
+      // Product options (e.g., ["Size", "Color"])
+      options: z.array(z.string()).optional(),
+
+      // Variants for products with multiple options
+      variants: z.array(z.object({
+        price: z.string(),
+        compareAtPrice: z.string().optional(),
+        sku: z.string().optional(),
+        barcode: z.string().optional(),
+        inventoryQuantity: z.number().optional(),
+        options: z.array(z.string()),
+        weight: z.number().optional(),
+        weightUnit: z.enum(["KILOGRAMS", "GRAMS", "POUNDS", "OUNCES"]).optional(),
+      })).optional(),
+
+      // Images via URL
+      images: z.array(z.object({
+        src: z.string(),
+        altText: z.string().optional(),
+      })).optional(),
     },
     async (args) => {
       const result = await createProduct.execute(args);
