@@ -282,6 +282,7 @@ async function startServer(accessToken: string, domain: string): Promise<void> {
   );
 
   // Add the createProduct tool (enhanced with variants, pricing, images)
+  // Note: weight must be set separately via inventory item update
   server.tool(
     "create-product",
     {
@@ -298,9 +299,6 @@ async function startServer(accessToken: string, domain: string): Promise<void> {
       compareAtPrice: z.string().optional(),
       sku: z.string().optional(),
       barcode: z.string().optional(),
-      inventoryQuantity: z.number().optional(),
-      weight: z.number().optional(),
-      weightUnit: z.enum(["KILOGRAMS", "GRAMS", "POUNDS", "OUNCES"]).optional(),
 
       // Product options (e.g., ["Size", "Color"])
       options: z.array(z.string()).optional(),
@@ -311,10 +309,7 @@ async function startServer(accessToken: string, domain: string): Promise<void> {
         compareAtPrice: z.string().optional(),
         sku: z.string().optional(),
         barcode: z.string().optional(),
-        inventoryQuantity: z.number().optional(),
         options: z.array(z.string()),
-        weight: z.number().optional(),
-        weightUnit: z.enum(["KILOGRAMS", "GRAMS", "POUNDS", "OUNCES"]).optional(),
       })).optional(),
 
       // Images via URL
@@ -332,6 +327,7 @@ async function startServer(accessToken: string, domain: string): Promise<void> {
   );
 
   // Add the updateProduct tool (for mass cleanup of imported products)
+  // Note: weight must be set separately via inventory item update
   server.tool(
     "update-product",
     {
@@ -351,8 +347,6 @@ async function startServer(accessToken: string, domain: string): Promise<void> {
       compareAtPrice: z.string().optional(),
       sku: z.string().optional(),
       barcode: z.string().optional(),
-      weight: z.number().optional(),
-      weightUnit: z.enum(["KILOGRAMS", "GRAMS", "POUNDS", "OUNCES"]).optional(),
 
       // For updating specific variants
       variants: z.array(z.object({
@@ -361,8 +355,6 @@ async function startServer(accessToken: string, domain: string): Promise<void> {
         compareAtPrice: z.string().optional(),
         sku: z.string().optional(),
         barcode: z.string().optional(),
-        weight: z.number().optional(),
-        weightUnit: z.enum(["KILOGRAMS", "GRAMS", "POUNDS", "OUNCES"]).optional(),
         options: z.array(z.string()).optional(),
       })).optional(),
 

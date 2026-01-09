@@ -3,14 +3,13 @@ import { gql } from "graphql-request";
 import { z } from "zod";
 
 // Variant schema for products with multiple options
+// Note: weight/weightUnit are not supported on ProductVariantSetInput - must be set via inventory item
 const VariantSchema = z.object({
   price: z.string(),
   compareAtPrice: z.string().optional(),
   sku: z.string().optional(),
   barcode: z.string().optional(),
   options: z.array(z.string()),
-  weight: z.number().optional(),
-  weightUnit: z.enum(["KILOGRAMS", "GRAMS", "POUNDS", "OUNCES"]).optional(),
 });
 
 // Image schema
@@ -30,12 +29,11 @@ const CreateProductInputSchema = z.object({
   status: z.enum(["ACTIVE", "DRAFT", "ARCHIVED"]).default("DRAFT"),
 
   // Simple product fields (when no variants)
+  // Note: weight must be set separately via inventory item update
   price: z.string().optional(),
   compareAtPrice: z.string().optional(),
   sku: z.string().optional(),
   barcode: z.string().optional(),
-  weight: z.number().optional(),
-  weightUnit: z.enum(["KILOGRAMS", "GRAMS", "POUNDS", "OUNCES"]).optional(),
 
   // Product options (e.g., ["Size", "Color"])
   options: z.array(z.string()).optional(),
@@ -153,19 +151,18 @@ const createProduct = {
           if (variant.compareAtPrice) v.compareAtPrice = variant.compareAtPrice;
           if (variant.sku) v.sku = variant.sku;
           if (variant.barcode) v.barcode = variant.barcode;
-          if (variant.weight !== undefined) v.weight = variant.weight;
-          if (variant.weightUnit) v.weightUnit = variant.weightUnit;
           return v;
         });
-      } else if (input.price || input.sku) {
-        // Simple product with single variant
-        const variant: Record<string, unknown> = {};
+      } else if (input.price || input.sku || input.barcode || input.compareAtPrice) {
+        // Simple product with single "Default Title" variant
+        // Shopify requires optionValues even for simple products
+        const variant: Record<string, unknown> = {
+          optionValues: [{ optionName: "Title", name: "Default Title" }]
+        };
         if (input.price) variant.price = input.price;
         if (input.compareAtPrice) variant.compareAtPrice = input.compareAtPrice;
         if (input.sku) variant.sku = input.sku;
         if (input.barcode) variant.barcode = input.barcode;
-        if (input.weight !== undefined) variant.weight = input.weight;
-        if (input.weightUnit) variant.weightUnit = input.weightUnit;
         productInput.variants = [variant];
       }
 

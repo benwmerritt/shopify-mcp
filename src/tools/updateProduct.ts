@@ -3,14 +3,13 @@ import { gql } from "graphql-request";
 import { z } from "zod";
 
 // Variant update schema
+// Note: weight/weightUnit are not supported on ProductVariantSetInput - must be set via inventory item
 const VariantUpdateSchema = z.object({
   id: z.string().optional(),
   price: z.string().optional(),
   compareAtPrice: z.string().optional(),
   sku: z.string().optional(),
   barcode: z.string().optional(),
-  weight: z.number().optional(),
-  weightUnit: z.enum(["KILOGRAMS", "GRAMS", "POUNDS", "OUNCES"]).optional(),
   options: z.array(z.string()).optional(),
 });
 
@@ -34,12 +33,11 @@ const UpdateProductInputSchema = z.object({
   status: z.enum(["ACTIVE", "DRAFT", "ARCHIVED"]).optional(),
 
   // Simple variant fields (auto-updates first variant)
+  // Note: weight must be set separately via inventory item update
   price: z.string().optional(),
   compareAtPrice: z.string().optional(),
   sku: z.string().optional(),
   barcode: z.string().optional(),
-  weight: z.number().optional(),
-  weightUnit: z.enum(["KILOGRAMS", "GRAMS", "POUNDS", "OUNCES"]).optional(),
 
   // For updating specific variants
   variants: z.array(VariantUpdateSchema).optional(),
@@ -84,8 +82,7 @@ const updateProduct = {
 
       // First, fetch the product to get current variant IDs if needed
       let firstVariantId: string | null = null;
-      const hasSimpleVariantFields = input.price || input.sku || input.compareAtPrice ||
-                                      input.barcode || input.weight !== undefined;
+      const hasSimpleVariantFields = input.price || input.sku || input.compareAtPrice || input.barcode;
 
       if (hasSimpleVariantFields && !input.variants) {
         // Need to get the first variant ID
@@ -178,8 +175,6 @@ const updateProduct = {
         if (input.compareAtPrice !== undefined) simpleVariant.compareAtPrice = input.compareAtPrice;
         if (input.sku !== undefined) simpleVariant.sku = input.sku;
         if (input.barcode !== undefined) simpleVariant.barcode = input.barcode;
-        if (input.weight !== undefined) simpleVariant.weight = input.weight;
-        if (input.weightUnit !== undefined) simpleVariant.weightUnit = input.weightUnit;
         variantsToUpdate.push(simpleVariant);
       }
 
@@ -192,8 +187,6 @@ const updateProduct = {
           if (variant.compareAtPrice !== undefined) v.compareAtPrice = variant.compareAtPrice;
           if (variant.sku !== undefined) v.sku = variant.sku;
           if (variant.barcode !== undefined) v.barcode = variant.barcode;
-          if (variant.weight !== undefined) v.weight = variant.weight;
-          if (variant.weightUnit !== undefined) v.weightUnit = variant.weightUnit;
           variantsToUpdate.push(v);
         }
       }
