@@ -2,6 +2,22 @@ import type { GraphQLClient } from "graphql-request";
 import { gql } from "graphql-request";
 import { z } from "zod";
 
+/**
+ * Escape value for unquoted wildcard searches (like title:*value*)
+ */
+function escapeWildcardSearch(value: string): string {
+  return value
+    .replace(/\\/g, "\\\\")
+    .replace(/"/g, '\\"')
+    .replace(/:/g, "\\:")
+    .replace(/\*/g, "\\*")
+    .replace(/\(/g, "\\(")
+    .replace(/\)/g, "\\)")
+    .replace(/\[/g, "\\[")
+    .replace(/\]/g, "\\]")
+    .replace(/'/g, "\\'");
+}
+
 // Input schema for getProducts
 const GetProductsInputSchema = z.object({
   searchTitle: z.string().optional(),
@@ -78,7 +94,7 @@ const getProducts = {
 
       const variables = {
         first: limit,
-        query: searchTitle ? `title:*${searchTitle}*` : undefined
+        query: searchTitle ? `title:*${escapeWildcardSearch(searchTitle)}*` : undefined
       };
 
       const data = (await shopifyClient.request(query, variables)) as {

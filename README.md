@@ -108,7 +108,6 @@ shopify-mcp --accessToken=<YOUR_ACCESS_TOKEN> --domain=<YOUR_SHOP>.myshopify.com
 ### Product Management
 
 1. `get-products`
-
    - Get all products or search by title
    - Inputs:
      - `searchTitle` (optional string): Filter products by title
@@ -119,70 +118,176 @@ shopify-mcp --accessToken=<YOUR_ACCESS_TOKEN> --domain=<YOUR_SHOP>.myshopify.com
    - Inputs:
      - `productId` (string): ID of the product to retrieve
 
-3. `createProduct`
-    - Create new product in store 
-    - Inputs:
-        - `title` (string): Title of the product
-        - `descriptionHtml` (string): Description of the product
-        - `vendor` (string): Vendor of the product
-        - `productType` (string): Type of the product
-        - `tags` (string): Tags of the product
-        - `status` (string): Status of the product "ACTIVE", "DRAFT", "ARCHIVED". Default "DRAFT"
+3. `create-product`
+   - Create new product in store 
+   - Inputs:
+     - `title` (string): Title of the product
+     - `descriptionHtml` (string): Description of the product
+     - `vendor` (string): Vendor of the product
+     - `productType` (string): Type of the product
+     - `tags` (array): Tags of the product
+     - `status` (string): Status of the product "ACTIVE", "DRAFT", "ARCHIVED". Default "DRAFT"
+     - `price`, `sku`, `barcode`, `variants`, `images` etc.
+
+4. `update-product`
+   - Update an existing product
+   - Inputs:
+     - `id` (string, required): Product ID
+     - All fields from create-product (optional)
+
+5. `delete-product`
+   - Delete a product (irreversible)
+   - Inputs:
+     - `productId` (string): Product ID to delete
+
+6. `delete-variant`
+   - Delete a specific variant from a product
+   - Inputs:
+     - `variantId` (string): Variant ID to delete
+
+7. `delete-product-images`
+   - Delete images from a product
+   - Inputs:
+     - `productId` (string): Product ID
+     - `imageIds` (array): Array of image/media IDs to delete
+
+8. `search-products` (Advanced)
+   - Advanced product search with multiple filters
+   - Inputs:
+     - `title` (optional): Filter by title
+     - `status` (optional): ACTIVE, DRAFT, or ARCHIVED
+     - `vendor` (optional): Filter by vendor
+     - `tag` / `tagNot` (optional): Include/exclude by tag
+     - `productType` (optional): Filter by product type
+     - `inventoryTotal`, `inventoryLessThan`, `inventoryGreaterThan` (optional): Inventory filters
+     - `createdAfter`, `createdBefore`, `updatedAfter` (optional): Date filters (ISO 8601)
+     - `hasImages` (optional boolean): Filter by image presence
+     - `limit`, `cursor`: Pagination
+
+### Bulk Operations
+
+1. `bulk-update-products`
+   - Update multiple products at once (max 100)
+   - Inputs:
+     - `productIds` (array): Array of product IDs
+     - `update` (object): Fields to update on all products
+       - `status`, `vendor`, `productType`, `tags`, `addTags`, `removeTags`
+
+2. `bulk-delete-products`
+   - Delete multiple products at once (max 100, irreversible)
+   - Inputs:
+     - `productIds` (array): Array of product IDs to delete
+
+### Collection Management
+
+1. `get-collections`
+   - List collections with optional filtering
+   - Inputs:
+     - `title` (optional): Filter by collection title
+     - `type` (optional): "smart", "custom", or "all"
+     - `limit`, `cursor`: Pagination
+
+2. `manage-collection-products`
+   - Add, remove, or list products in a collection
+   - Inputs:
+     - `collectionId` (string): Collection ID
+     - `action` (string): "add", "remove", or "list"
+     - `productIds` (array, optional): Product IDs (required for add/remove)
 
 ### Customer Management
-1. `get-customers`
 
+1. `get-customers`
    - Get customers or search by name/email
    - Inputs:
      - `searchQuery` (optional string): Filter customers by name or email
      - `limit` (optional number, default: 10): Maximum number of customers to return
 
 2. `update-customer`
-
    - Update a customer's information
    - Inputs:
-     - `id` (string, required): Shopify customer ID (numeric ID only, like "6276879810626")
-     - `firstName` (string, optional): Customer's first name
-     - `lastName` (string, optional): Customer's last name
-     - `email` (string, optional): Customer's email address
-     - `phone` (string, optional): Customer's phone number
-     - `tags` (array of strings, optional): Tags to apply to the customer
+     - `id` (string, required): Shopify customer ID (numeric ID only)
+     - `firstName`, `lastName`, `email`, `phone` (optional)
+     - `tags` (array, optional): Tags for the customer
      - `note` (string, optional): Note about the customer
-     - `taxExempt` (boolean, optional): Whether the customer is exempt from taxes
-     - `metafields` (array of objects, optional): Customer metafields for storing additional data
+     - `taxExempt` (boolean, optional)
+     - `metafields` (array, optional): Customer metafields
 
 3. `get-customer-orders`
    - Get orders for a specific customer
    - Inputs:
-     - `customerId` (string, required): Shopify customer ID (numeric ID only, like "6276879810626")
-     - `limit` (optional number, default: 10): Maximum number of orders to return
+     - `customerId` (string, required): Shopify customer ID
+     - `limit` (optional number, default: 10)
 
 ### Order Management
 
 1. `get-orders`
-
    - Get orders with optional filtering
    - Inputs:
-     - `status` (optional string): Filter by order status
-     - `limit` (optional number, default: 10): Maximum number of orders to return
+     - `status` (optional): "any", "open", "closed", "cancelled"
+     - `limit` (optional number, default: 10)
 
 2. `get-order-by-id`
-
    - Get a specific order by ID
    - Inputs:
-     - `orderId` (string, required): Full Shopify order ID (e.g., "gid://shopify/Order/6090960994370")
+     - `orderId` (string, required): Full Shopify order ID
 
 3. `update-order`
-
-   - Update an existing order with new information
+   - Update an existing order
    - Inputs:
      - `id` (string, required): Shopify order ID
-     - `tags` (array of strings, optional): New tags for the order
-     - `email` (string, optional): Update customer email
-     - `note` (string, optional): Order notes
-     - `customAttributes` (array of objects, optional): Custom attributes for the order
-     - `metafields` (array of objects, optional): Order metafields
-     - `shippingAddress` (object, optional): Shipping address information
+     - `tags`, `email`, `note`, `customAttributes`, `metafields`, `shippingAddress` (optional)
+
+### Inventory Management
+
+1. `get-inventory-levels`
+   - Get inventory levels across locations
+   - Inputs:
+     - `productId` (optional): Get inventory for a specific product
+     - `locationId` (optional): Filter by location
+     - `limit`, `cursor`: Pagination
+
+2. `update-inventory`
+   - Adjust or set inventory quantity
+   - Inputs:
+     - `inventoryItemId` (string): Inventory item ID
+     - `locationId` (string): Location ID
+     - `delta` (number, optional): Adjust by this amount
+     - `setQuantity` (number, optional): Set to exact quantity
+     - `reason` (string): Reason for change (correction, damaged, received, etc.)
+
+### Metafield Management
+
+1. `get-metafields`
+   - Get metafields for any resource type
+   - Inputs:
+     - `ownerType` (string): PRODUCT, PRODUCTVARIANT, CUSTOMER, ORDER, COLLECTION, or SHOP
+     - `ownerId` (string, optional): Resource ID (required except for SHOP)
+     - `namespace` (optional): Filter by namespace
+     - `limit`: Maximum results
+
+2. `delete-metafield`
+   - Delete a specific metafield
+   - Inputs:
+     - `metafieldId` (string): Metafield ID to delete
+
+### URL Redirects
+
+1. `get-redirects`
+   - List URL redirects
+   - Inputs:
+     - `path` (optional): Filter by source path
+     - `limit`, `cursor`: Pagination
+
+2. `create-redirect`
+   - Create a URL redirect (useful when deleting products)
+   - Inputs:
+     - `path` (string): Source path (e.g., /products/old-product)
+     - `target` (string): Target URL
+
+3. `delete-redirect`
+   - Delete a URL redirect
+   - Inputs:
+     - `redirectId` (string): Redirect ID to delete
 
 ## Debugging
 

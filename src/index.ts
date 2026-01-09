@@ -19,6 +19,23 @@ import { updateOrder } from "./tools/updateOrder.js";
 import { createProduct } from "./tools/createProduct.js";
 import { updateProduct } from "./tools/updateProduct.js";
 
+// Import new data cleanup tools
+import { deleteProduct } from "./tools/deleteProduct.js";
+import { deleteVariant } from "./tools/deleteVariant.js";
+import { deleteProductImages } from "./tools/deleteProductImages.js";
+import { searchProducts } from "./tools/searchProducts.js";
+import { bulkUpdateProducts } from "./tools/bulkUpdateProducts.js";
+import { bulkDeleteProducts } from "./tools/bulkDeleteProducts.js";
+import { getCollections } from "./tools/getCollections.js";
+import { manageCollectionProducts } from "./tools/manageCollectionProducts.js";
+import { getInventoryLevels } from "./tools/getInventoryLevels.js";
+import { updateInventory } from "./tools/updateInventory.js";
+import { getMetafields } from "./tools/getMetafields.js";
+import { deleteMetafield } from "./tools/deleteMetafield.js";
+import { getRedirects } from "./tools/getRedirects.js";
+import { createRedirect } from "./tools/createRedirect.js";
+import { deleteRedirect } from "./tools/deleteRedirect.js";
+
 // Import OAuth helpers
 import { runOAuthFlow, loadToken } from "./oauth.js";
 
@@ -65,6 +82,23 @@ async function startServer(accessToken: string, domain: string): Promise<void> {
   updateCustomer.initialize(shopifyClient);
   createProduct.initialize(shopifyClient);
   updateProduct.initialize(shopifyClient);
+
+  // Initialize new data cleanup tools
+  deleteProduct.initialize(shopifyClient);
+  deleteVariant.initialize(shopifyClient);
+  deleteProductImages.initialize(shopifyClient);
+  searchProducts.initialize(shopifyClient);
+  bulkUpdateProducts.initialize(shopifyClient);
+  bulkDeleteProducts.initialize(shopifyClient);
+  getCollections.initialize(shopifyClient);
+  manageCollectionProducts.initialize(shopifyClient);
+  getInventoryLevels.initialize(shopifyClient);
+  updateInventory.initialize(shopifyClient);
+  getMetafields.initialize(shopifyClient);
+  deleteMetafield.initialize(shopifyClient);
+  getRedirects.initialize(shopifyClient);
+  createRedirect.initialize(shopifyClient);
+  deleteRedirect.initialize(shopifyClient);
 
   // Set up MCP server
   const server = new McpServer({
@@ -340,6 +374,285 @@ async function startServer(accessToken: string, domain: string): Promise<void> {
     },
     async (args) => {
       const result = await updateProduct.execute(args);
+      return {
+        content: [{ type: "text", text: JSON.stringify(result) }]
+      };
+    }
+  );
+
+  // ==================== DATA CLEANUP TOOLS ====================
+
+  // Delete a single product
+  server.tool(
+    "delete-product",
+    {
+      productId: z.string().min(1).describe("Product ID (can be numeric or full GID)")
+    },
+    async (args) => {
+      const result = await deleteProduct.execute(args);
+      return {
+        content: [{ type: "text", text: JSON.stringify(result) }]
+      };
+    }
+  );
+
+  // Delete a product variant
+  server.tool(
+    "delete-variant",
+    {
+      variantId: z.string().min(1).describe("Variant ID to delete (can be numeric or full GID)")
+    },
+    async (args) => {
+      const result = await deleteVariant.execute(args);
+      return {
+        content: [{ type: "text", text: JSON.stringify(result) }]
+      };
+    }
+  );
+
+  // Delete product images
+  server.tool(
+    "delete-product-images",
+    {
+      productId: z.string().min(1).describe("Product ID (can be numeric or full GID)"),
+      imageIds: z.array(z.string().min(1)).min(1).describe("Array of image/media IDs to delete")
+    },
+    async (args) => {
+      const result = await deleteProductImages.execute(args);
+      return {
+        content: [{ type: "text", text: JSON.stringify(result) }]
+      };
+    }
+  );
+
+  // Advanced product search with filters
+  server.tool(
+    "search-products",
+    {
+      title: z.string().optional().describe("Filter by product title (partial match)"),
+      status: z.enum(["ACTIVE", "DRAFT", "ARCHIVED"]).optional().describe("Filter by product status"),
+      vendor: z.string().optional().describe("Filter by vendor name (exact match)"),
+      tag: z.string().optional().describe("Filter products that have this tag"),
+      tagNot: z.string().optional().describe("Filter products that do NOT have this tag"),
+      productType: z.string().optional().describe("Filter by product type"),
+      inventoryTotal: z.number().optional().describe("Filter by exact inventory count"),
+      inventoryLessThan: z.number().optional().describe("Filter products with inventory less than this"),
+      inventoryGreaterThan: z.number().optional().describe("Filter products with inventory greater than this"),
+      createdAfter: z.string().optional().describe("Filter products created after this date (ISO 8601)"),
+      createdBefore: z.string().optional().describe("Filter products created before this date (ISO 8601)"),
+      updatedAfter: z.string().optional().describe("Filter products updated after this date (ISO 8601)"),
+      hasImages: z.boolean().optional().describe("Filter products that have (true) or don't have (false) images"),
+      limit: z.number().default(50).describe("Maximum number of products to return (max 250)"),
+      cursor: z.string().optional().describe("Pagination cursor for fetching next page")
+    },
+    async (args) => {
+      const result = await searchProducts.execute(args);
+      return {
+        content: [{ type: "text", text: JSON.stringify(result) }]
+      };
+    }
+  );
+
+  // Bulk update products
+  server.tool(
+    "bulk-update-products",
+    {
+      productIds: z.array(z.string().min(1)).min(1).max(100).describe("Array of product IDs to update (max 100)"),
+      update: z.object({
+        status: z.enum(["ACTIVE", "DRAFT", "ARCHIVED"]).optional(),
+        vendor: z.string().optional(),
+        productType: z.string().optional(),
+        tags: z.array(z.string()).optional().describe("Replace all tags with these"),
+        addTags: z.array(z.string()).optional().describe("Add these tags (keeps existing)"),
+        removeTags: z.array(z.string()).optional().describe("Remove these specific tags")
+      })
+    },
+    async (args) => {
+      const result = await bulkUpdateProducts.execute(args);
+      return {
+        content: [{ type: "text", text: JSON.stringify(result) }]
+      };
+    }
+  );
+
+  // Bulk delete products
+  server.tool(
+    "bulk-delete-products",
+    {
+      productIds: z.array(z.string().min(1)).min(1).max(100).describe("Array of product IDs to delete (max 100)")
+    },
+    async (args) => {
+      const result = await bulkDeleteProducts.execute(args);
+      return {
+        content: [{ type: "text", text: JSON.stringify(result) }]
+      };
+    }
+  );
+
+  // ==================== COLLECTION TOOLS ====================
+
+  // Get collections
+  server.tool(
+    "get-collections",
+    {
+      title: z.string().optional().describe("Filter by collection title (partial match)"),
+      type: z.enum(["smart", "custom", "all"]).default("all").describe("Filter by collection type"),
+      limit: z.number().default(50).describe("Maximum number of collections to return"),
+      cursor: z.string().optional().describe("Pagination cursor for fetching next page")
+    },
+    async (args) => {
+      const result = await getCollections.execute(args);
+      return {
+        content: [{ type: "text", text: JSON.stringify(result) }]
+      };
+    }
+  );
+
+  // Manage collection products (add/remove/list)
+  server.tool(
+    "manage-collection-products",
+    {
+      collectionId: z.string().min(1).describe("Collection ID (can be numeric or full GID)"),
+      action: z.enum(["add", "remove", "list"]).describe("Action to perform"),
+      productIds: z.array(z.string()).optional().describe("Product IDs to add or remove (required for add/remove)")
+    },
+    async (args) => {
+      const result = await manageCollectionProducts.execute(args);
+      return {
+        content: [{ type: "text", text: JSON.stringify(result) }]
+      };
+    }
+  );
+
+  // ==================== INVENTORY TOOLS ====================
+
+  // Get inventory levels
+  server.tool(
+    "get-inventory-levels",
+    {
+      productId: z.string().optional().describe("Filter by product ID to see inventory for that product"),
+      locationId: z.string().optional().describe("Filter by location ID"),
+      limit: z.number().default(50).describe("Maximum number of inventory items to return"),
+      cursor: z.string().optional().describe("Pagination cursor for fetching next page")
+    },
+    async (args) => {
+      const result = await getInventoryLevels.execute(args);
+      return {
+        content: [{ type: "text", text: JSON.stringify(result) }]
+      };
+    }
+  );
+
+  // Update inventory
+  server.tool(
+    "update-inventory",
+    {
+      inventoryItemId: z.string().min(1).describe("Inventory item ID (from getInventoryLevels)"),
+      locationId: z.string().min(1).describe("Location ID where inventory is stored"),
+      delta: z.number().optional().describe("Amount to adjust inventory by (positive or negative)"),
+      setQuantity: z.number().optional().describe("Set inventory to this exact quantity"),
+      reason: z.enum([
+        "correction",
+        "cycle_count_available",
+        "damaged",
+        "movement_created",
+        "movement_updated",
+        "movement_received",
+        "movement_canceled",
+        "other",
+        "promotion",
+        "quality_control",
+        "received",
+        "reservation_created",
+        "reservation_deleted",
+        "reservation_updated",
+        "restock",
+        "safety_stock",
+        "shrinkage"
+      ]).default("correction").describe("Reason for the inventory change")
+    },
+    async (args) => {
+      const result = await updateInventory.execute(args);
+      return {
+        content: [{ type: "text", text: JSON.stringify(result) }]
+      };
+    }
+  );
+
+  // ==================== METAFIELD TOOLS ====================
+
+  // Get metafields
+  server.tool(
+    "get-metafields",
+    {
+      ownerType: z.enum(["PRODUCT", "PRODUCTVARIANT", "CUSTOMER", "ORDER", "COLLECTION", "SHOP"]).describe("Type of resource to get metafields for"),
+      ownerId: z.string().optional().describe("ID of the specific resource (required for all except SHOP)"),
+      namespace: z.string().optional().describe("Filter by metafield namespace"),
+      limit: z.number().default(50).describe("Maximum number of metafields to return")
+    },
+    async (args) => {
+      const result = await getMetafields.execute(args);
+      return {
+        content: [{ type: "text", text: JSON.stringify(result) }]
+      };
+    }
+  );
+
+  // Delete metafield
+  server.tool(
+    "delete-metafield",
+    {
+      metafieldId: z.string().min(1).describe("Metafield ID to delete (can be numeric or full GID)")
+    },
+    async (args) => {
+      const result = await deleteMetafield.execute(args);
+      return {
+        content: [{ type: "text", text: JSON.stringify(result) }]
+      };
+    }
+  );
+
+  // ==================== URL REDIRECT TOOLS ====================
+
+  // Get redirects
+  server.tool(
+    "get-redirects",
+    {
+      path: z.string().optional().describe("Filter redirects by source path (partial match)"),
+      limit: z.number().default(50).describe("Maximum number of redirects to return"),
+      cursor: z.string().optional().describe("Pagination cursor for fetching next page")
+    },
+    async (args) => {
+      const result = await getRedirects.execute(args);
+      return {
+        content: [{ type: "text", text: JSON.stringify(result) }]
+      };
+    }
+  );
+
+  // Create redirect
+  server.tool(
+    "create-redirect",
+    {
+      path: z.string().min(1).describe("Source path to redirect from (e.g., /products/old-product)"),
+      target: z.string().min(1).describe("Target URL to redirect to (e.g., /products/new-product or full URL)")
+    },
+    async (args) => {
+      const result = await createRedirect.execute(args);
+      return {
+        content: [{ type: "text", text: JSON.stringify(result) }]
+      };
+    }
+  );
+
+  // Delete redirect
+  server.tool(
+    "delete-redirect",
+    {
+      redirectId: z.string().min(1).describe("Redirect ID to delete (can be numeric or full GID)")
+    },
+    async (args) => {
+      const result = await deleteRedirect.execute(args);
       return {
         content: [{ type: "text", text: JSON.stringify(result) }]
       };
