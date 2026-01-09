@@ -12,17 +12,51 @@ const TOKEN_DIR = path.join(os.homedir(), ".shopify-mcp");
 const TOKEN_FILE = path.join(TOKEN_DIR, "tokens.json");
 
 const DEFAULT_SCOPES = [
+  // Products & Catalog
   "read_products",
   "write_products",
-  "read_customers",
-  "write_customers",
-  "read_orders",
-  "write_orders",
+  "read_product_listings",
+  "write_product_listings",
+  "read_publications",
+  "write_publications",
+  // Inventory & Locations
   "read_inventory",
   "write_inventory",
   "read_locations",
+  "write_locations",
+  // Orders & Fulfillment
+  "read_orders",
+  "write_orders",
+  "read_draft_orders",
+  "write_draft_orders",
+  "read_fulfillments",
+  "write_fulfillments",
+  "read_shipping",
+  "write_shipping",
+  // Customers
+  "read_customers",
+  "write_customers",
+  // Discounts & Pricing
+  "read_price_rules",
+  "write_discounts",
+  // Content & Online Store
   "read_content",
-  "write_content"
+  "write_content",
+  "read_online_store_pages",
+  "write_online_store_pages",
+  "read_themes",
+  "write_themes",
+  // Files & Media
+  "read_files",
+  "write_files",
+  // Metaobjects
+  "read_metaobjects",
+  "write_metaobjects",
+  "read_metaobject_definitions",
+  "write_metaobject_definitions",
+  // Reports
+  "read_reports",
+  "write_reports"
 ].join(",");
 
 export interface TokenData {

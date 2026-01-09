@@ -28,6 +28,9 @@ import { bulkUpdateProducts } from "./tools/bulkUpdateProducts.js";
 import { bulkDeleteProducts } from "./tools/bulkDeleteProducts.js";
 import { getCollections } from "./tools/getCollections.js";
 import { manageCollectionProducts } from "./tools/manageCollectionProducts.js";
+import { createCollection } from "./tools/createCollection.js";
+import { updateCollection } from "./tools/updateCollection.js";
+import { deleteCollection } from "./tools/deleteCollection.js";
 import { getInventoryLevels } from "./tools/getInventoryLevels.js";
 import { updateInventory } from "./tools/updateInventory.js";
 import { getMetafields } from "./tools/getMetafields.js";
@@ -92,6 +95,9 @@ async function startServer(accessToken: string, domain: string): Promise<void> {
   bulkDeleteProducts.initialize(shopifyClient);
   getCollections.initialize(shopifyClient);
   manageCollectionProducts.initialize(shopifyClient);
+  createCollection.initialize(shopifyClient);
+  updateCollection.initialize(shopifyClient);
+  deleteCollection.initialize(shopifyClient);
   getInventoryLevels.initialize(shopifyClient);
   updateInventory.initialize(shopifyClient);
   getMetafields.initialize(shopifyClient);
@@ -113,7 +119,11 @@ async function startServer(accessToken: string, domain: string): Promise<void> {
     "get-products",
     {
       searchTitle: z.string().optional(),
-      limit: z.number().default(10)
+      limit: z.number().default(10),
+      fields: z.union([
+        z.enum(["slim", "standard", "full"]),
+        z.array(z.string())
+      ]).default("slim").describe("Fields to return: 'slim' (default), 'standard', 'full', or array of field names")
     },
     async (args) => {
       const result = await getProducts.execute(args);
@@ -435,7 +445,11 @@ async function startServer(accessToken: string, domain: string): Promise<void> {
       updatedAfter: z.string().optional().describe("Filter products updated after this date (ISO 8601)"),
       hasImages: z.boolean().optional().describe("Filter products that have (true) or don't have (false) images"),
       limit: z.number().default(50).describe("Maximum number of products to return (max 250)"),
-      cursor: z.string().optional().describe("Pagination cursor for fetching next page")
+      cursor: z.string().optional().describe("Pagination cursor for fetching next page"),
+      fields: z.union([
+        z.enum(["slim", "standard", "full"]),
+        z.array(z.string())
+      ]).default("slim").describe("Fields to return: 'slim' (default), 'standard', 'full', or array of field names")
     },
     async (args) => {
       const result = await searchProducts.execute(args);
@@ -510,6 +524,76 @@ async function startServer(accessToken: string, domain: string): Promise<void> {
     },
     async (args) => {
       const result = await manageCollectionProducts.execute(args);
+      return {
+        content: [{ type: "text", text: JSON.stringify(result) }]
+      };
+    }
+  );
+
+  // Create collection (custom or smart)
+  server.tool(
+    "create-collection",
+    {
+      title: z.string().min(1).describe("Collection title"),
+      descriptionHtml: z.string().optional().describe("HTML description"),
+      handle: z.string().optional().describe("URL handle (auto-generated if not provided)"),
+      image: z.object({
+        src: z.string(),
+        altText: z.string().optional()
+      }).optional().describe("Collection image"),
+      productIds: z.array(z.string()).optional().describe("Product IDs to add (for custom collections)"),
+      rules: z.array(z.object({
+        column: z.enum(["TAG", "VENDOR", "TYPE", "TITLE", "VARIANT_PRICE", "VARIANT_INVENTORY", "IS_PRICE_REDUCED"]),
+        relation: z.enum(["EQUALS", "NOT_EQUALS", "CONTAINS", "NOT_CONTAINS", "STARTS_WITH", "ENDS_WITH", "GREATER_THAN", "LESS_THAN"]),
+        condition: z.string()
+      })).optional().describe("Rules for smart collection auto-population"),
+      rulesApplyDisjunctively: z.boolean().default(false).describe("true = OR logic, false = AND logic"),
+      sortOrder: z.enum(["MANUAL", "BEST_SELLING", "ALPHA_ASC", "ALPHA_DESC", "CREATED_DESC", "CREATED", "PRICE_DESC", "PRICE_ASC"]).optional()
+    },
+    async (args) => {
+      const result = await createCollection.execute(args);
+      return {
+        content: [{ type: "text", text: JSON.stringify(result) }]
+      };
+    }
+  );
+
+  // Update collection
+  server.tool(
+    "update-collection",
+    {
+      id: z.string().min(1).describe("Collection ID to update"),
+      title: z.string().optional().describe("New collection title"),
+      descriptionHtml: z.string().optional().describe("New HTML description"),
+      handle: z.string().optional().describe("New URL handle"),
+      image: z.object({
+        src: z.string(),
+        altText: z.string().optional()
+      }).optional().describe("New collection image"),
+      rules: z.array(z.object({
+        column: z.enum(["TAG", "VENDOR", "TYPE", "TITLE", "VARIANT_PRICE", "VARIANT_INVENTORY", "IS_PRICE_REDUCED"]),
+        relation: z.enum(["EQUALS", "NOT_EQUALS", "CONTAINS", "NOT_CONTAINS", "STARTS_WITH", "ENDS_WITH", "GREATER_THAN", "LESS_THAN"]),
+        condition: z.string()
+      })).optional().describe("New rules for smart collection (replaces existing)"),
+      rulesApplyDisjunctively: z.boolean().optional().describe("true = OR logic, false = AND logic"),
+      sortOrder: z.enum(["MANUAL", "BEST_SELLING", "ALPHA_ASC", "ALPHA_DESC", "CREATED_DESC", "CREATED", "PRICE_DESC", "PRICE_ASC"]).optional()
+    },
+    async (args) => {
+      const result = await updateCollection.execute(args);
+      return {
+        content: [{ type: "text", text: JSON.stringify(result) }]
+      };
+    }
+  );
+
+  // Delete collection
+  server.tool(
+    "delete-collection",
+    {
+      collectionId: z.string().min(1).describe("Collection ID to delete")
+    },
+    async (args) => {
+      const result = await deleteCollection.execute(args);
       return {
         content: [{ type: "text", text: JSON.stringify(result) }]
       };

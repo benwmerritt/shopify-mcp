@@ -2,6 +2,36 @@ import type { GraphQLClient } from "graphql-request";
 import { gql } from "graphql-request";
 import { z } from "zod";
 
+// Field presets for controlling response size
+const FIELD_PRESETS: Record<string, string[] | null> = {
+  slim: ["id", "title", "handle", "vendor", "status", "tags"],
+  standard: ["id", "title", "handle", "vendor", "status", "tags",
+             "description", "createdAt", "updatedAt",
+             "totalInventory", "priceRange"],
+  full: null  // return everything
+};
+
+// Filter product object to only include requested fields
+function filterProductFields(product: Record<string, unknown>, fields: string[] | null): Record<string, unknown> {
+  if (fields === null) return product; // full - return everything
+
+  const filtered: Record<string, unknown> = {};
+  for (const field of fields) {
+    if (field in product) {
+      filtered[field] = product[field];
+    }
+  }
+  return filtered;
+}
+
+// Resolve fields parameter to actual field list
+function resolveFields(fields: string | string[]): string[] | null {
+  if (typeof fields === "string") {
+    return FIELD_PRESETS[fields] ?? FIELD_PRESETS.slim;
+  }
+  return fields;
+}
+
 /**
  * Escape value for unquoted wildcard searches (like title:*value*)
  */
@@ -21,7 +51,11 @@ function escapeWildcardSearch(value: string): string {
 // Input schema for getProducts
 const GetProductsInputSchema = z.object({
   searchTitle: z.string().optional(),
-  limit: z.number().default(10)
+  limit: z.number().default(10),
+  fields: z.union([
+    z.enum(["slim", "standard", "full"]),
+    z.array(z.string())
+  ]).default("slim").describe("Fields to return: 'slim' (default), 'standard', 'full', or array of field names")
 });
 
 type GetProductsInput = z.infer<typeof GetProductsInputSchema>;
@@ -54,6 +88,8 @@ const getProducts = {
                 description
                 handle
                 status
+                vendor
+                tags
                 createdAt
                 updatedAt
                 totalInventory
@@ -126,6 +162,8 @@ const getProducts = {
           description: product.description,
           handle: product.handle,
           status: product.status,
+          vendor: product.vendor,
+          tags: product.tags,
           createdAt: product.createdAt,
           updatedAt: product.updatedAt,
           totalInventory: product.totalInventory,
@@ -144,7 +182,11 @@ const getProducts = {
         };
       });
 
-      return { products };
+      // Apply field filtering based on fields parameter
+      const requestedFields = resolveFields(input.fields);
+      const filteredProducts = products.map((p: Record<string, unknown>) => filterProductFields(p, requestedFields));
+
+      return { products: filteredProducts, fields: input.fields };
     } catch (error) {
       console.error("Error fetching products:", error);
       throw new Error(

@@ -2,6 +2,36 @@ import type { GraphQLClient } from "graphql-request";
 import { gql } from "graphql-request";
 import { z } from "zod";
 
+// Field presets for controlling response size
+const FIELD_PRESETS: Record<string, string[] | null> = {
+  slim: ["id", "title", "handle", "vendor", "status", "tags"],
+  standard: ["id", "title", "handle", "vendor", "status", "tags",
+             "description", "productType", "createdAt", "updatedAt",
+             "totalInventory", "priceRange", "hasImages"],
+  full: null  // return everything
+};
+
+// Filter product object to only include requested fields
+function filterProductFields(product: Record<string, unknown>, fields: string[] | null): Record<string, unknown> {
+  if (fields === null) return product; // full - return everything
+
+  const filtered: Record<string, unknown> = {};
+  for (const field of fields) {
+    if (field in product) {
+      filtered[field] = product[field];
+    }
+  }
+  return filtered;
+}
+
+// Resolve fields parameter to actual field list
+function resolveFields(fields: string | string[]): string[] | null {
+  if (typeof fields === "string") {
+    return FIELD_PRESETS[fields] ?? FIELD_PRESETS.slim;
+  }
+  return fields;
+}
+
 /**
  * Escape special characters for Shopify search query syntax.
  * Shopify uses a Lucene-like query syntax where certain characters have special meaning.
@@ -64,7 +94,13 @@ const SearchProductsInputSchema = z.object({
   
   // Pagination
   limit: z.number().default(50).describe("Maximum number of products to return (max 250)"),
-  cursor: z.string().optional().describe("Pagination cursor for fetching next page")
+  cursor: z.string().optional().describe("Pagination cursor for fetching next page"),
+
+  // Response fields control
+  fields: z.union([
+    z.enum(["slim", "standard", "full"]),
+    z.array(z.string())
+  ]).default("slim").describe("Fields to return: 'slim' (default), 'standard', 'full', or array of field names")
 });
 
 type SearchProductsInput = z.infer<typeof SearchProductsInputSchema>;
@@ -250,9 +286,13 @@ const searchProducts = {
         products = products.filter((p) => p.hasImages === input.hasImages);
       }
 
+      // Apply field filtering based on fields parameter
+      const requestedFields = resolveFields(input.fields);
+      const filteredProducts = products.map((p) => filterProductFields(p, requestedFields));
+
       // Build response with accurate pagination info
       const response: {
-        products: typeof products;
+        products: Record<string, unknown>[];
         totalCount: number;
         pageInfo: {
           hasNextPage: boolean;
@@ -260,6 +300,7 @@ const searchProducts = {
           note?: string;
         };
         query: string;
+        fields: string | string[];
         filtering?: {
           postFiltered: boolean;
           unfilteredCount: number;
@@ -267,13 +308,14 @@ const searchProducts = {
           removedByFilter: number;
         };
       } = {
-        products,
-        totalCount: products.length,
+        products: filteredProducts,
+        totalCount: filteredProducts.length,
         pageInfo: {
           hasNextPage: data.products.pageInfo.hasNextPage,
           nextCursor: data.products.pageInfo.endCursor
         },
-        query: queryString || "(all products)"
+        query: queryString || "(all products)",
+        fields: input.fields
       };
 
       // When post-filtering is applied, pagination becomes approximate
