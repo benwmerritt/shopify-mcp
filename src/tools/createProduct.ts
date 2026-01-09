@@ -8,7 +8,6 @@ const VariantSchema = z.object({
   compareAtPrice: z.string().optional(),
   sku: z.string().optional(),
   barcode: z.string().optional(),
-  inventoryQuantity: z.number().optional(),
   options: z.array(z.string()),
   weight: z.number().optional(),
   weightUnit: z.enum(["KILOGRAMS", "GRAMS", "POUNDS", "OUNCES"]).optional(),
@@ -35,7 +34,6 @@ const CreateProductInputSchema = z.object({
   compareAtPrice: z.string().optional(),
   sku: z.string().optional(),
   barcode: z.string().optional(),
-  inventoryQuantity: z.number().optional(),
   weight: z.number().optional(),
   weightUnit: z.enum(["KILOGRAMS", "GRAMS", "POUNDS", "OUNCES"]).optional(),
 
@@ -65,10 +63,10 @@ const createProduct = {
 
   execute: async (input: CreateProductInput) => {
     try {
-      // Build the GraphQL mutation - include media parameter if images provided
+      // Use productSet mutation - it handles product + variants in one call
       const query = gql`
-        mutation productCreate($input: ProductInput!, $media: [CreateMediaInput!]) {
-          productCreate(input: $input, media: $media) {
+        mutation productSet($input: ProductSetInput!, $synchronous: Boolean) {
+          productSet(input: $input, synchronous: $synchronous) {
             product {
               id
               title
@@ -87,7 +85,6 @@ const createProduct = {
                     compareAtPrice
                     sku
                     barcode
-                    inventoryQuantity
                   }
                 }
               }
@@ -109,7 +106,7 @@ const createProduct = {
         }
       `;
 
-      // Build the product input
+      // Build the product input for productSet
       const productInput: Record<string, unknown> = {
         title: input.title,
         status: input.status,
@@ -121,25 +118,43 @@ const createProduct = {
       if (input.productType) productInput.productType = input.productType;
       if (input.tags) productInput.tags = input.tags;
 
-      // Handle product options (e.g., Size, Color)
-      if (input.options && input.options.length > 0) {
-        productInput.options = input.options;
-      }
+      // Handle variants with options
+      if (input.variants && input.variants.length > 0 && input.options && input.options.length > 0) {
+        // Build productOptions with all unique values
+        const optionValuesMap: Map<string, Set<string>> = new Map();
 
-      // Handle variants
-      if (input.variants && input.variants.length > 0) {
-        // Product with multiple variants
+        // Initialize with option names
+        for (const optionName of input.options) {
+          optionValuesMap.set(optionName, new Set());
+        }
+
+        // Collect all unique values from variants
+        for (const variant of input.variants) {
+          for (let i = 0; i < input.options.length && i < variant.options.length; i++) {
+            optionValuesMap.get(input.options[i])?.add(variant.options[i]);
+          }
+        }
+
+        // Build productOptions array
+        productInput.productOptions = input.options.map((optionName) => ({
+          name: optionName,
+          values: Array.from(optionValuesMap.get(optionName) || []).map((v) => ({ name: v })),
+        }));
+
+        // Build variants with optionValues
         productInput.variants = input.variants.map((variant) => {
           const v: Record<string, unknown> = {
             price: variant.price,
-            options: variant.options,
+            optionValues: input.options!.map((optionName, i) => ({
+              optionName: optionName,
+              name: variant.options[i],
+            })),
           };
           if (variant.compareAtPrice) v.compareAtPrice = variant.compareAtPrice;
           if (variant.sku) v.sku = variant.sku;
           if (variant.barcode) v.barcode = variant.barcode;
           if (variant.weight !== undefined) v.weight = variant.weight;
           if (variant.weightUnit) v.weightUnit = variant.weightUnit;
-          // Note: inventoryQuantity is set via inventory API, not productCreate
           return v;
         });
       } else if (input.price || input.sku) {
@@ -154,25 +169,13 @@ const createProduct = {
         productInput.variants = [variant];
       }
 
-      // Build media input for images
-      let mediaInput: Array<{ originalSource: string; alt?: string; mediaContentType: string }> | undefined;
-      if (input.images && input.images.length > 0) {
-        mediaInput = input.images.map((img) => ({
-          originalSource: img.src,
-          alt: img.altText,
-          mediaContentType: "IMAGE",
-        }));
-      }
-
-      const variables: Record<string, unknown> = {
+      const variables = {
         input: productInput,
+        synchronous: true,
       };
-      if (mediaInput) {
-        variables.media = mediaInput;
-      }
 
       const data = (await shopifyClient.request(query, variables)) as {
-        productCreate: {
+        productSet: {
           product: {
             id: string;
             title: string;
@@ -191,7 +194,6 @@ const createProduct = {
                   compareAtPrice: string | null;
                   sku: string | null;
                   barcode: string | null;
-                  inventoryQuantity: number;
                 };
               }>;
             };
@@ -204,25 +206,29 @@ const createProduct = {
                 };
               }>;
             };
-          };
+          } | null;
           userErrors: Array<{
-            field: string;
+            field: string[];
             message: string;
           }>;
         };
       };
 
-      // If there are user errors, throw an error
-      if (data.productCreate.userErrors.length > 0) {
+      // Check for errors
+      if (data.productSet.userErrors.length > 0) {
         throw new Error(
-          `Failed to create product: ${data.productCreate.userErrors
-            .map((e) => `${e.field}: ${e.message}`)
+          `Failed to create product: ${data.productSet.userErrors
+            .map((e) => `${e.field.join(".")}: ${e.message}`)
             .join(", ")}`
         );
       }
 
+      if (!data.productSet.product) {
+        throw new Error("Product creation returned no product");
+      }
+
       // Format the response
-      const product = data.productCreate.product;
+      const product = data.productSet.product;
       return {
         product: {
           id: product.id,

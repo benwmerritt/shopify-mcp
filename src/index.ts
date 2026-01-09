@@ -17,6 +17,7 @@ import { getProducts } from "./tools/getProducts.js";
 import { updateCustomer } from "./tools/updateCustomer.js";
 import { updateOrder } from "./tools/updateOrder.js";
 import { createProduct } from "./tools/createProduct.js";
+import { updateProduct } from "./tools/updateProduct.js";
 
 // Import OAuth helpers
 import { runOAuthFlow, loadToken } from "./oauth.js";
@@ -63,6 +64,7 @@ async function startServer(accessToken: string, domain: string): Promise<void> {
   getCustomerOrders.initialize(shopifyClient);
   updateCustomer.initialize(shopifyClient);
   createProduct.initialize(shopifyClient);
+  updateProduct.initialize(shopifyClient);
 
   // Set up MCP server
   const server = new McpServer({
@@ -289,6 +291,55 @@ async function startServer(accessToken: string, domain: string): Promise<void> {
     },
     async (args) => {
       const result = await createProduct.execute(args);
+      return {
+        content: [{ type: "text", text: JSON.stringify(result) }]
+      };
+    }
+  );
+
+  // Add the updateProduct tool (for mass cleanup of imported products)
+  server.tool(
+    "update-product",
+    {
+      // REQUIRED - product ID
+      id: z.string().min(1),
+
+      // Basic product fields (all optional)
+      title: z.string().optional(),
+      descriptionHtml: z.string().optional(),
+      vendor: z.string().optional(),
+      productType: z.string().optional(),
+      tags: z.array(z.string()).optional(),
+      status: z.enum(["ACTIVE", "DRAFT", "ARCHIVED"]).optional(),
+
+      // Simple variant fields (auto-updates first variant)
+      price: z.string().optional(),
+      compareAtPrice: z.string().optional(),
+      sku: z.string().optional(),
+      barcode: z.string().optional(),
+      weight: z.number().optional(),
+      weightUnit: z.enum(["KILOGRAMS", "GRAMS", "POUNDS", "OUNCES"]).optional(),
+
+      // For updating specific variants
+      variants: z.array(z.object({
+        id: z.string().optional(),
+        price: z.string().optional(),
+        compareAtPrice: z.string().optional(),
+        sku: z.string().optional(),
+        barcode: z.string().optional(),
+        weight: z.number().optional(),
+        weightUnit: z.enum(["KILOGRAMS", "GRAMS", "POUNDS", "OUNCES"]).optional(),
+        options: z.array(z.string()).optional(),
+      })).optional(),
+
+      // Images
+      images: z.array(z.object({
+        src: z.string(),
+        altText: z.string().optional(),
+      })).optional(),
+    },
+    async (args) => {
+      const result = await updateProduct.execute(args);
       return {
         content: [{ type: "text", text: JSON.stringify(result) }]
       };
