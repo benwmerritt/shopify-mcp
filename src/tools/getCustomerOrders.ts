@@ -5,7 +5,8 @@ import { z } from "zod";
 // Input schema for getting customer orders
 const GetCustomerOrdersInputSchema = z.object({
   customerId: z.string().regex(/^\d+$/, "Customer ID must be numeric"),
-  limit: z.number().default(10)
+  limit: z.number().default(10),
+  cursor: z.string().optional().describe("Pagination cursor for fetching next page")
 });
 
 type GetCustomerOrdersInput = z.infer<typeof GetCustomerOrdersInputSchema>;
@@ -32,8 +33,12 @@ const getCustomerOrders = {
 
       // Query to get orders for a specific customer
       const query = gql`
-        query GetCustomerOrders($query: String!, $first: Int!) {
-          orders(query: $query, first: $first) {
+        query GetCustomerOrders($query: String!, $first: Int!, $cursor: String) {
+          orders(query: $query, first: $first, after: $cursor) {
+            pageInfo {
+              hasNextPage
+              endCursor
+            }
             edges {
               node {
                 id
@@ -102,7 +107,8 @@ const getCustomerOrders = {
       // We use the query parameter to filter orders by customer ID
       const variables = {
         query: `customer_id:${customerId}`,
-        first: limit
+        first: limit,
+        cursor: input.cursor
       };
 
       const data = (await shopifyClient.request(query, variables)) as {
@@ -155,7 +161,13 @@ const getCustomerOrders = {
         };
       });
 
-      return { orders };
+      return {
+        orders,
+        pageInfo: {
+          hasNextPage: data.orders.pageInfo.hasNextPage,
+          endCursor: data.orders.pageInfo.endCursor
+        }
+      };
     } catch (error) {
       console.error("Error fetching customer orders:", error);
       throw new Error(

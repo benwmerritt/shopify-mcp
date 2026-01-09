@@ -35,6 +35,13 @@ import { getInventoryLevels } from "./tools/getInventoryLevels.js";
 import { updateInventory } from "./tools/updateInventory.js";
 import { getMetafields } from "./tools/getMetafields.js";
 import { deleteMetafield } from "./tools/deleteMetafield.js";
+import { setMetafield } from "./tools/setMetafield.js";
+import { getLocations } from "./tools/getLocations.js";
+import { getDraftOrders } from "./tools/getDraftOrders.js";
+import { getDraftOrderById } from "./tools/getDraftOrderById.js";
+import { createDraftOrder } from "./tools/createDraftOrder.js";
+import { updateDraftOrder } from "./tools/updateDraftOrder.js";
+import { completeDraftOrder } from "./tools/completeDraftOrder.js";
 import { getRedirects } from "./tools/getRedirects.js";
 import { createRedirect } from "./tools/createRedirect.js";
 import { deleteRedirect } from "./tools/deleteRedirect.js";
@@ -102,6 +109,13 @@ async function startServer(accessToken: string, domain: string): Promise<void> {
   updateInventory.initialize(shopifyClient);
   getMetafields.initialize(shopifyClient);
   deleteMetafield.initialize(shopifyClient);
+  setMetafield.initialize(shopifyClient);
+  getLocations.initialize(shopifyClient);
+  getDraftOrders.initialize(shopifyClient);
+  getDraftOrderById.initialize(shopifyClient);
+  createDraftOrder.initialize(shopifyClient);
+  updateDraftOrder.initialize(shopifyClient);
+  completeDraftOrder.initialize(shopifyClient);
   getRedirects.initialize(shopifyClient);
   createRedirect.initialize(shopifyClient);
   deleteRedirect.initialize(shopifyClient);
@@ -150,7 +164,8 @@ async function startServer(accessToken: string, domain: string): Promise<void> {
     "get-customers",
     {
       searchQuery: z.string().optional(),
-      limit: z.number().default(10)
+      limit: z.number().default(10),
+      cursor: z.string().optional().describe("Pagination cursor for fetching next page")
     },
     async (args) => {
       const result = await getCustomers.execute(args);
@@ -164,7 +179,8 @@ async function startServer(accessToken: string, domain: string): Promise<void> {
     "get-orders",
     {
       status: z.enum(["any", "open", "closed", "cancelled"]).default("any"),
-      limit: z.number().default(10)
+      limit: z.number().default(10),
+      cursor: z.string().optional().describe("Pagination cursor for fetching next page")
     },
     async (args) => {
       const result = await getOrders.execute(args);
@@ -246,7 +262,8 @@ async function startServer(accessToken: string, domain: string): Promise<void> {
         .string()
         .regex(/^\d+$/, "Customer ID must be numeric")
         .describe("Shopify customer ID, numeric excluding gid prefix"),
-      limit: z.number().default(10)
+      limit: z.number().default(10),
+      cursor: z.string().optional().describe("Pagination cursor for fetching next page")
     },
     async (args) => {
       const result = await getCustomerOrders.execute(args);
@@ -682,6 +699,258 @@ async function startServer(accessToken: string, domain: string): Promise<void> {
     },
     async (args) => {
       const result = await deleteMetafield.execute(args);
+      return {
+        content: [{ type: "text", text: JSON.stringify(result) }]
+      };
+    }
+  );
+
+  // Set metafield (create or update)
+  server.tool(
+    "set-metafield",
+    {
+      ownerId: z.string().min(1).describe("ID of the resource to set metafield on (Product, Customer, Order, etc.)"),
+      ownerType: z.enum(["PRODUCT", "PRODUCTVARIANT", "CUSTOMER", "ORDER", "COLLECTION", "SHOP"]).describe("Type of resource"),
+      namespace: z.string().min(1).describe("Metafield namespace (e.g., 'custom', 'my_app')"),
+      key: z.string().min(1).describe("Metafield key"),
+      value: z.string().describe("Metafield value (JSON string for complex types)"),
+      type: z.enum([
+        "single_line_text_field",
+        "multi_line_text_field",
+        "rich_text_field",
+        "number_integer",
+        "number_decimal",
+        "boolean",
+        "date",
+        "date_time",
+        "json",
+        "weight",
+        "dimension",
+        "volume",
+        "money",
+        "rating",
+        "url",
+        "color",
+        "product_reference",
+        "variant_reference",
+        "collection_reference",
+        "file_reference",
+        "page_reference",
+        "metaobject_reference",
+        "list.single_line_text_field",
+        "list.number_integer",
+        "list.number_decimal",
+        "list.date",
+        "list.date_time",
+        "list.url",
+        "list.color",
+        "list.product_reference",
+        "list.variant_reference",
+        "list.collection_reference",
+        "list.file_reference",
+        "list.page_reference",
+        "list.metaobject_reference"
+      ]).default("single_line_text_field").describe("Metafield type (determines how value is stored and validated)")
+    },
+    async (args) => {
+      const result = await setMetafield.execute(args);
+      return {
+        content: [{ type: "text", text: JSON.stringify(result) }]
+      };
+    }
+  );
+
+  // ==================== LOCATION TOOLS ====================
+
+  // Get locations
+  server.tool(
+    "get-locations",
+    {
+      includeInactive: z.boolean().default(false).describe("Include inactive locations"),
+      includeLegacy: z.boolean().default(false).describe("Include legacy locations"),
+      limit: z.number().default(50).describe("Maximum number of locations to return")
+    },
+    async (args) => {
+      const result = await getLocations.execute(args);
+      return {
+        content: [{ type: "text", text: JSON.stringify(result) }]
+      };
+    }
+  );
+
+  // ==================== DRAFT ORDER TOOLS ====================
+
+  // Get draft orders
+  server.tool(
+    "get-draft-orders",
+    {
+      status: z.enum(["OPEN", "INVOICE_SENT", "COMPLETED"]).optional().describe("Filter by draft order status"),
+      query: z.string().optional().describe("Search query (Shopify search syntax)"),
+      limit: z.number().default(50).describe("Maximum number of draft orders to return"),
+      cursor: z.string().optional().describe("Pagination cursor for fetching next page")
+    },
+    async (args) => {
+      const result = await getDraftOrders.execute(args);
+      return {
+        content: [{ type: "text", text: JSON.stringify(result) }]
+      };
+    }
+  );
+
+  // Get draft order by ID
+  server.tool(
+    "get-draft-order-by-id",
+    {
+      draftOrderId: z.string().min(1).describe("Draft order ID (can be numeric or full GID)")
+    },
+    async (args) => {
+      const result = await getDraftOrderById.execute(args);
+      return {
+        content: [{ type: "text", text: JSON.stringify(result) }]
+      };
+    }
+  );
+
+  // Create draft order
+  server.tool(
+    "create-draft-order",
+    {
+      lineItems: z.array(z.object({
+        variantId: z.string().optional().describe("Product variant ID (for existing products)"),
+        quantity: z.number().min(1).describe("Quantity to add"),
+        title: z.string().optional().describe("Custom line item title (required if no variantId)"),
+        originalUnitPrice: z.string().optional().describe("Price per unit for custom items"),
+        taxable: z.boolean().optional(),
+        requiresShipping: z.boolean().optional(),
+        sku: z.string().optional(),
+        appliedDiscount: z.object({
+          value: z.number(),
+          valueType: z.enum(["FIXED_AMOUNT", "PERCENTAGE"]),
+          title: z.string().optional()
+        }).optional()
+      })).min(1).describe("Line items (at least 1 required)"),
+      email: z.string().email().optional().describe("Customer email"),
+      phone: z.string().optional().describe("Customer phone"),
+      customerId: z.string().optional().describe("Existing customer ID to attach"),
+      shippingAddress: z.object({
+        firstName: z.string().optional(),
+        lastName: z.string().optional(),
+        address1: z.string().optional(),
+        address2: z.string().optional(),
+        city: z.string().optional(),
+        province: z.string().optional(),
+        zip: z.string().optional(),
+        country: z.string().optional(),
+        phone: z.string().optional()
+      }).optional(),
+      billingAddress: z.object({
+        firstName: z.string().optional(),
+        lastName: z.string().optional(),
+        address1: z.string().optional(),
+        address2: z.string().optional(),
+        city: z.string().optional(),
+        province: z.string().optional(),
+        zip: z.string().optional(),
+        country: z.string().optional(),
+        phone: z.string().optional()
+      }).optional(),
+      appliedDiscount: z.object({
+        value: z.number(),
+        valueType: z.enum(["FIXED_AMOUNT", "PERCENTAGE"]),
+        title: z.string().optional(),
+        description: z.string().optional()
+      }).optional().describe("Order-level discount"),
+      shippingLine: z.object({
+        title: z.string(),
+        price: z.string()
+      }).optional().describe("Shipping method and price"),
+      note: z.string().optional(),
+      tags: z.array(z.string()).optional(),
+      taxExempt: z.boolean().optional()
+    },
+    async (args) => {
+      const result = await createDraftOrder.execute(args);
+      return {
+        content: [{ type: "text", text: JSON.stringify(result) }]
+      };
+    }
+  );
+
+  // Update draft order
+  server.tool(
+    "update-draft-order",
+    {
+      id: z.string().min(1).describe("Draft order ID to update"),
+      lineItems: z.array(z.object({
+        variantId: z.string().optional(),
+        quantity: z.number().min(1),
+        title: z.string().optional(),
+        originalUnitPrice: z.string().optional(),
+        taxable: z.boolean().optional(),
+        requiresShipping: z.boolean().optional(),
+        sku: z.string().optional(),
+        appliedDiscount: z.object({
+          value: z.number(),
+          valueType: z.enum(["FIXED_AMOUNT", "PERCENTAGE"]),
+          title: z.string().optional()
+        }).optional()
+      })).optional().describe("Replace line items (omit to keep existing)"),
+      email: z.string().email().optional(),
+      phone: z.string().optional(),
+      customerId: z.string().optional(),
+      shippingAddress: z.object({
+        firstName: z.string().optional(),
+        lastName: z.string().optional(),
+        address1: z.string().optional(),
+        address2: z.string().optional(),
+        city: z.string().optional(),
+        province: z.string().optional(),
+        zip: z.string().optional(),
+        country: z.string().optional(),
+        phone: z.string().optional()
+      }).optional(),
+      billingAddress: z.object({
+        firstName: z.string().optional(),
+        lastName: z.string().optional(),
+        address1: z.string().optional(),
+        address2: z.string().optional(),
+        city: z.string().optional(),
+        province: z.string().optional(),
+        zip: z.string().optional(),
+        country: z.string().optional(),
+        phone: z.string().optional()
+      }).optional(),
+      appliedDiscount: z.object({
+        value: z.number(),
+        valueType: z.enum(["FIXED_AMOUNT", "PERCENTAGE"]),
+        title: z.string().optional(),
+        description: z.string().optional()
+      }).optional(),
+      shippingLine: z.object({
+        title: z.string(),
+        price: z.string()
+      }).optional(),
+      note: z.string().optional(),
+      tags: z.array(z.string()).optional(),
+      taxExempt: z.boolean().optional()
+    },
+    async (args) => {
+      const result = await updateDraftOrder.execute(args);
+      return {
+        content: [{ type: "text", text: JSON.stringify(result) }]
+      };
+    }
+  );
+
+  // Complete draft order
+  server.tool(
+    "complete-draft-order",
+    {
+      id: z.string().min(1).describe("Draft order ID to complete"),
+      paymentPending: z.boolean().default(false).describe("If true, marks payment as pending. If false, marks as paid.")
+    },
+    async (args) => {
+      const result = await completeDraftOrder.execute(args);
       return {
         content: [{ type: "text", text: JSON.stringify(result) }]
       };

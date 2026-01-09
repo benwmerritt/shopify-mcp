@@ -1,71 +1,69 @@
-# Shopify MCP Server
+# Shopify MCP
 
-MCP server for Shopify's Admin GraphQL API. Built to let agents read and manage store data through a clean set of tools.
+A Model Context Protocol (MCP) server that connects agents to the Shopify Admin GraphQL API. Use it to browse, edit, and clean up store data via a curated set of tools.
 
-**Package:** `shopify-mcp`  
-**Command:** `shopify-mcp`
+**npm:** `shopify-mcp`  
+**binary:** `shopify-mcp`
 
-## What this server does
+## Highlights
 
-- Products: search, create, update, delete, and tidy variants/images
-- Collections: create/update/delete and manage products in collections
-- Orders: list, fetch, and update
-- Customers: list, update, and fetch order history
-- Inventory: query levels and adjust quantities
-- Metafields + redirects: read/delete metafields, manage URL redirects
-- OAuth flow: authorize once, store tokens locally, and reuse
+- CRUD for products, collections, orders, and customers
+- Draft orders for quotes, manual orders, and B2B pricing
+- Inventory and location lookups for stock workflows
+- Metafields for custom data
+- URL redirects management
+- OAuth login flow with local token caching
+- Bulk product cleanup utilities
 
-## Requirements
+## Prerequisites
 
 - Node.js 18+
-- A Shopify custom app (token or OAuth credentials)
+- A Shopify custom app (OAuth or Admin API token)
 
-## Setup
+## Install + run
 
-### Option A: OAuth (recommended)
+### OAuth flow (recommended)
 
-1. Create a custom app and copy **Client ID** + **Client Secret**
+1. Create a custom app and copy **Client ID** and **Client Secret**.
 2. In **App setup**, set **App URL** and **Allowed redirection URLs** to:
    `http://localhost:3456/callback`
-3. Run the OAuth flow:
+3. Start the OAuth flow:
 
-```
+```bash
 npx shopify-mcp --oauth --domain=your-store.myshopify.com --clientId=xxx --clientSecret=yyy
 ```
 
-Your browser will open for authorization. Tokens are saved to:
-`~/.shopify-mcp/tokens.json`
+Tokens are stored at `~/.shopify-mcp/tokens.json`. After that, start the server with just the domain:
 
-Then you can run the server without an access token:
-
-```
+```bash
 npx shopify-mcp --domain=your-store.myshopify.com
 ```
 
 Optional: override scopes with `--scopes` or `SHOPIFY_SCOPES`.
 
-### Option B: Access token (manual)
+### Access token (manual)
 
 1. Create a custom app in Shopify
-2. Configure Admin API scopes:
+2. Enable Admin API scopes:
    - `read_products`, `write_products`
    - `read_customers`, `write_customers`
    - `read_orders`, `write_orders`
+   - `read_draft_orders`, `write_draft_orders`
    - `read_inventory`, `write_inventory`
    - `read_locations`
    - `read_content`, `write_content`
    - `read_files`, `write_files`
 3. Install the app and copy the Admin API access token
 
-Run with the token:
+Run:
 
-```
+```bash
 shopify-mcp --accessToken=<YOUR_ACCESS_TOKEN> --domain=<YOUR_SHOP>.myshopify.com
 ```
 
-## Usage
+## MCP client setup
 
-### Claude Desktop config
+### Claude Desktop
 
 ```json
 {
@@ -84,15 +82,15 @@ shopify-mcp --accessToken=<YOUR_ACCESS_TOKEN> --domain=<YOUR_SHOP>.myshopify.com
 }
 ```
 
-If you ran the OAuth flow and saved a token, you can omit `--accessToken` and just provide `--domain`.
+If you completed OAuth, omit `--accessToken` and keep `--domain`.
 
 Config paths:
-- MacOS: `~/Library/Application Support/Claude/claude_desktop_config.json`
+- macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`
 - Windows: `%APPDATA%/Claude/claude_desktop_config.json`
 
-### .env (optional)
+### Environment variables (optional)
 
-```
+```bash
 SHOPIFY_ACCESS_TOKEN=your_access_token
 MYSHOPIFY_DOMAIN=your-store.myshopify.com
 # Optional OAuth values:
@@ -101,7 +99,7 @@ MYSHOPIFY_DOMAIN=your-store.myshopify.com
 # SHOPIFY_SCOPES=comma,separated,scopes
 ```
 
-## Tool catalog (28 total)
+## Tool catalog
 
 ### Products
 - `get-products` (supports `fields`: `slim | standard | full | []`)
@@ -123,21 +121,32 @@ MYSHOPIFY_DOMAIN=your-store.myshopify.com
 - `delete-collection`
 
 ### Customers
-- `get-customers`
+- `get-customers` (supports pagination via `cursor`)
 - `update-customer`
-- `get-customer-orders`
+- `get-customer-orders` (supports pagination via `cursor`)
 
 ### Orders
-- `get-orders`
+- `get-orders` (supports pagination via `cursor`)
 - `get-order-by-id`
 - `update-order`
+
+### Draft Orders
+- `get-draft-orders` (supports pagination via `cursor`)
+- `get-draft-order-by-id`
+- `create-draft-order`
+- `update-draft-order`
+- `complete-draft-order`
 
 ### Inventory
 - `get-inventory-levels`
 - `update-inventory`
 
+### Locations
+- `get-locations`
+
 ### Metafields
 - `get-metafields`
+- `set-metafield` (create or update)
 - `delete-metafield`
 
 ### URL redirects
@@ -149,7 +158,7 @@ MYSHOPIFY_DOMAIN=your-store.myshopify.com
 
 Tail Claude Desktop logs:
 
-```
+```bash
 tail -n 20 -f ~/Library/Logs/Claude/mcp*.log
 ```
 
