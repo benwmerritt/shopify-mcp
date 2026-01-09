@@ -159,7 +159,6 @@ const updateDraftOrder = {
               status
               email
               updatedAt
-              note
               tags
               totalPriceSet {
                 shopMoney {
@@ -225,7 +224,6 @@ const updateDraftOrder = {
             status: string;
             email: string | null;
             updatedAt: string;
-            note: string | null;
             tags: string[];
             totalPriceSet: { shopMoney: { amount: string; currencyCode: string } };
             subtotalPriceSet: { shopMoney: { amount: string; currencyCode: string } };
@@ -267,7 +265,6 @@ const updateDraftOrder = {
           status: draftOrder.status,
           email: draftOrder.email,
           updatedAt: draftOrder.updatedAt,
-          note: draftOrder.note,
           tags: draftOrder.tags,
           totalPrice: draftOrder.totalPriceSet.shopMoney,
           subtotalPrice: draftOrder.subtotalPriceSet.shopMoney,

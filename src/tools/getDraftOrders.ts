@@ -50,7 +50,6 @@ const getDraftOrders = {
                 createdAt
                 updatedAt
                 completedAt
-                note
                 tags
                 totalPriceSet {
                   shopMoney {
@@ -117,7 +116,6 @@ const getDraftOrders = {
               createdAt: string;
               updatedAt: string;
               completedAt: string | null;
-              note: string | null;
               tags: string[];
               totalPriceSet: { shopMoney: { amount: string; currencyCode: string } };
               subtotalPriceSet: { shopMoney: { amount: string; currencyCode: string } };
@@ -150,7 +148,6 @@ const getDraftOrders = {
         createdAt: edge.node.createdAt,
         updatedAt: edge.node.updatedAt,
         completedAt: edge.node.completedAt,
-        note: edge.node.note,
         tags: edge.node.tags,
         totalPrice: edge.node.totalPriceSet.shopMoney,
         subtotalPrice: edge.node.subtotalPriceSet.shopMoney,

@@ -45,7 +45,6 @@ const getDraftOrderById = {
             updatedAt
             completedAt
             invoiceSentAt
-            note
             tags
             taxExempt
             currencyCode
@@ -197,7 +196,6 @@ const getDraftOrderById = {
           updatedAt: string;
           completedAt: string | null;
           invoiceSentAt: string | null;
-          note: string | null;
           tags: string[];
           taxExempt: boolean;
           currencyCode: string;
@@ -253,7 +251,6 @@ const getDraftOrderById = {
           updatedAt: draftOrder.updatedAt,
           completedAt: draftOrder.completedAt,
           invoiceSentAt: draftOrder.invoiceSentAt,
-          note: draftOrder.note,
           tags: draftOrder.tags,
           taxExempt: draftOrder.taxExempt,
           currencyCode: draftOrder.currencyCode,
