@@ -202,9 +202,13 @@ const updateProduct = {
         productInput.variants = variantsToUpdate;
       }
 
-      // Handle images (media)
-      // Note: For productSet, we would need to use productCreateMedia separately
-      // For now, skip images in updates - can be added later
+      // Handle images via URL
+      if (input.images && input.images.length > 0) {
+        productInput.files = input.images.map(img => ({
+          originalSource: img.src,
+          alt: img.altText || undefined,
+        }));
+      }
 
       const variables = {
         input: productInput,

@@ -169,6 +169,14 @@ const createProduct = {
         productInput.variants = [variant];
       }
 
+      // Handle images via URL
+      if (input.images && input.images.length > 0) {
+        productInput.files = input.images.map(img => ({
+          originalSource: img.src,
+          alt: img.altText || undefined,
+        }));
+      }
+
       const variables = {
         input: productInput,
         synchronous: true,
