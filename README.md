@@ -5,10 +5,6 @@ MCP server for Shopify's Admin GraphQL API. Built to let agents read and manage 
 **Package:** `shopify-mcp`  
 **Command:** `shopify-mcp`
 
-<a href="https://glama.ai/mcp/servers/@GeLi2001/shopify-mcp">
-  <img width="380" height="200" src="https://glama.ai/mcp/servers/@GeLi2001/shopify-mcp/badge" alt="Shopify MCP server" />
-</a>
-
 ## What this server does
 
 - Products: search, create, update, delete, and tidy variants/images
