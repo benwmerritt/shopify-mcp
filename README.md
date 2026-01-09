@@ -13,20 +13,24 @@ MCP Server for Shopify API, enabling interaction with store data through GraphQL
 
 ## Features
 
-- **Product Management**: Search and retrieve product information
+- **Product Management**: Search, create, update, and delete products and variants
+- **Collection Management**: Create, update, delete, and manage collection products
 - **Customer Management**: Load customer data and manage customer tags
-- **Order Management**: Advanced order querying and filtering
+- **Order Management**: Advanced order querying and updates
+- **Inventory Management**: Query inventory levels and adjust quantities
+- **Metafields & Redirects**: Manage metafields and URL redirects
 - **GraphQL Integration**: Direct integration with Shopify's GraphQL Admin API
 - **Comprehensive Error Handling**: Clear error messages for API and authentication issues
+- **OAuth Support**: Run an OAuth flow to get and save access tokens
 
 ## Prerequisites
 
-1. Node.js (version 16 or higher)
-2. Shopify Custom App Access Token (see setup instructions below)
+1. Node.js (version 18 or higher)
+2. Shopify custom app credentials or access token (see setup instructions below)
 
 ## Setup
 
-### Shopify Access Token
+### Shopify Access Token (Manual)
 
 To use this MCP server, you'll need to create a custom app in your Shopify store:
 
@@ -36,14 +40,37 @@ To use this MCP server, you'll need to create a custom app in your Shopify store
 4. Set a name for your app (e.g., "Shopify MCP Server")
 5. Click **Configure Admin API scopes**
 6. Select the following scopes:
-   - `read_products`, `write_products`
+   - `read_products`, `write_products` (products, variants, collections)
    - `read_customers`, `write_customers`
    - `read_orders`, `write_orders`
+   - `read_inventory`, `write_inventory`
+   - `read_locations`
+   - `read_content`, `write_content` (redirects)
+   - `read_files`, `write_files` (product images by URL)
 7. Click **Save**
 8. Click **Install app**
 9. Click **Install** to give the app access to your store data
 10. After installation, you'll see your **Admin API access token**
 11. Copy this token - you'll need it for configuration
+
+### OAuth Flow (Recommended)
+
+If you prefer to authorize via OAuth and store tokens locally:
+
+1. Create a custom app and note its **Client ID** and **Client Secret**
+2. In **App setup**, set **App URL** and **Allowed redirection URLs** to `http://localhost:3456/callback`
+3. Run the OAuth flow:
+   ```
+   npx shopify-mcp --oauth --domain=your-store.myshopify.com --clientId=xxx --clientSecret=yyy
+   ```
+4. Your browser will open to authorize the app (callback at `http://localhost:3456/callback`). The token is saved to:
+   `~/.shopify-mcp/tokens.json`
+5. After that, you can start the server without passing an access token:
+   ```
+   npx shopify-mcp --domain=your-store.myshopify.com
+   ```
+
+Optional: override default scopes with `--scopes` or `SHOPIFY_SCOPES`.
 
 ### Usage with Claude Desktop
 
@@ -71,6 +98,8 @@ Locations for the Claude Desktop config file:
 - MacOS: `~/Library/Application Support/Claude/claude_desktop_config.json`
 - Windows: `%APPDATA%/Claude/claude_desktop_config.json`
 
+If you ran the OAuth flow and saved a token, you can omit `--accessToken` and just provide `--domain`.
+
 ### Alternative: Run Locally with Environment Variables
 
 If you prefer to use environment variables instead of command-line arguments:
@@ -80,6 +109,10 @@ If you prefer to use environment variables instead of command-line arguments:
    ```
    SHOPIFY_ACCESS_TOKEN=your_access_token
    MYSHOPIFY_DOMAIN=your-store.myshopify.com
+   # Optional OAuth values:
+   # SHOPIFY_CLIENT_ID=your_client_id
+   # SHOPIFY_CLIENT_SECRET=your_client_secret
+   # SHOPIFY_SCOPES=comma,separated,scopes
    ```
 
 2. Run the server with npx:
@@ -112,6 +145,7 @@ shopify-mcp --accessToken=<YOUR_ACCESS_TOKEN> --domain=<YOUR_SHOP>.myshopify.com
    - Inputs:
      - `searchTitle` (optional string): Filter products by title
      - `limit` (number): Maximum number of products to return
+     - `fields` (string | string[]): `"slim" | "standard" | "full"` or list of field names
 
 2. `get-product-by-id`
    - Get a specific product by ID
@@ -127,13 +161,17 @@ shopify-mcp --accessToken=<YOUR_ACCESS_TOKEN> --domain=<YOUR_SHOP>.myshopify.com
      - `productType` (string): Type of the product
      - `tags` (array): Tags of the product
      - `status` (string): Status of the product "ACTIVE", "DRAFT", "ARCHIVED". Default "DRAFT"
-     - `price`, `sku`, `barcode`, `variants`, `images` etc.
+     - `price`, `compareAtPrice`, `sku`, `barcode` (optional)
+     - `options` (array): Option names (e.g., ["Size", "Color"])
+     - `variants` (array): Variant objects with `price`, `compareAtPrice`, `sku`, `barcode`, `options`
+     - `images` (array): `{ src, altText }` image URLs
 
 4. `update-product`
    - Update an existing product
    - Inputs:
      - `id` (string, required): Product ID
      - All fields from create-product (optional)
+     - `variants` supports updating specific variants by `id`
 
 5. `delete-product`
    - Delete a product (irreversible)
@@ -163,6 +201,7 @@ shopify-mcp --accessToken=<YOUR_ACCESS_TOKEN> --domain=<YOUR_SHOP>.myshopify.com
      - `createdAfter`, `createdBefore`, `updatedAfter` (optional): Date filters (ISO 8601)
      - `hasImages` (optional boolean): Filter by image presence
      - `limit`, `cursor`: Pagination
+     - `fields` (string | string[]): `"slim" | "standard" | "full"` or list of field names
 
 ### Bulk Operations
 
@@ -194,6 +233,29 @@ shopify-mcp --accessToken=<YOUR_ACCESS_TOKEN> --domain=<YOUR_SHOP>.myshopify.com
      - `action` (string): "add", "remove", or "list"
      - `productIds` (array, optional): Product IDs (required for add/remove)
 
+3. `create-collection`
+   - Create a custom or smart collection
+   - Inputs:
+     - `title` (string): Collection title
+     - `descriptionHtml` (optional): HTML description
+     - `handle` (optional): URL handle
+     - `image` (optional): `{ src, altText }`
+     - `productIds` (optional): Product IDs to add (custom collections)
+     - `rules` (optional): Smart-collection rules with `column`, `relation`, `condition`
+     - `rulesApplyDisjunctively` (optional boolean): OR vs AND logic
+     - `sortOrder` (optional): MANUAL, BEST_SELLING, ALPHA_ASC, ALPHA_DESC, CREATED_DESC, CREATED, PRICE_DESC, PRICE_ASC
+
+4. `update-collection`
+   - Update an existing collection
+   - Inputs:
+     - `id` (string): Collection ID
+     - `title`, `descriptionHtml`, `handle`, `image`, `rules`, `rulesApplyDisjunctively`, `sortOrder` (optional)
+
+5. `delete-collection`
+   - Delete a collection by ID (does not delete products)
+   - Inputs:
+     - `collectionId` (string): Collection ID
+
 ### Customer Management
 
 1. `get-customers`
@@ -205,7 +267,7 @@ shopify-mcp --accessToken=<YOUR_ACCESS_TOKEN> --domain=<YOUR_SHOP>.myshopify.com
 2. `update-customer`
    - Update a customer's information
    - Inputs:
-     - `id` (string, required): Shopify customer ID (numeric ID only)
+     - `id` (string, required): Shopify customer ID (numeric only)
      - `firstName`, `lastName`, `email`, `phone` (optional)
      - `tags` (array, optional): Tags for the customer
      - `note` (string, optional): Note about the customer
@@ -215,7 +277,7 @@ shopify-mcp --accessToken=<YOUR_ACCESS_TOKEN> --domain=<YOUR_SHOP>.myshopify.com
 3. `get-customer-orders`
    - Get orders for a specific customer
    - Inputs:
-     - `customerId` (string, required): Shopify customer ID
+     - `customerId` (string, required): Shopify customer ID (numeric only)
      - `limit` (optional number, default: 10)
 
 ### Order Management
@@ -253,7 +315,7 @@ shopify-mcp --accessToken=<YOUR_ACCESS_TOKEN> --domain=<YOUR_SHOP>.myshopify.com
      - `locationId` (string): Location ID
      - `delta` (number, optional): Adjust by this amount
      - `setQuantity` (number, optional): Set to exact quantity
-     - `reason` (string): Reason for change (correction, damaged, received, etc.)
+     - `reason` (string): Reason for change (e.g., correction, damaged, received, restock, shrinkage, etc.)
 
 ### Metafield Management
 
