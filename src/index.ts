@@ -1148,7 +1148,6 @@ async function startServer(accessToken: string, domain: string): Promise<void> {
         console.error(`SSE connection closed: ${sessionId}`);
       });
 
-      await transport.start();
       await server.connect(transport);
     });
 
