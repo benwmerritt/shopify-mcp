@@ -1112,13 +1112,31 @@ async function startServer(accessToken: string, domain: string): Promise<void> {
     // Store active transports by session
     const transports = new Map<string, SSEServerTransport>();
 
-    // Health check endpoint
+    // API key validation middleware
+    const validateApiKey = (req: Request, res: Response, next: () => void) => {
+      const apiKey = req.query.apiKey as string;
+      const expectedKey = process.env.MCP_API_KEY;
+
+      if (!expectedKey) {
+        // No API key configured - allow all requests (dev mode)
+        return next();
+      }
+
+      if (!apiKey || apiKey !== expectedKey) {
+        res.status(401).json({ error: "Unauthorized: Invalid or missing API key" });
+        return;
+      }
+
+      next();
+    };
+
+    // Health check endpoint (no auth required)
     app.get("/health", (_req: Request, res: Response) => {
       res.json({ status: "ok", mode: "remote", domain: domain });
     });
 
     // SSE endpoint - client connects here for server-sent events
-    app.get("/sse", async (req: Request, res: Response) => {
+    app.get("/sse", validateApiKey, async (req: Request, res: Response) => {
       console.error(`SSE connection from ${req.ip}`);
 
       const transport = new SSEServerTransport("/messages", res);
@@ -1135,7 +1153,7 @@ async function startServer(accessToken: string, domain: string): Promise<void> {
     });
 
     // Messages endpoint - client sends messages here
-    app.post("/messages", express.json(), async (req: Request, res: Response) => {
+    app.post("/messages", express.json(), validateApiKey, async (req: Request, res: Response) => {
       // Find the transport for this request (simplified: use most recent)
       const transport = Array.from(transports.values()).pop();
       if (!transport) {
