@@ -47,6 +47,9 @@ import { createRedirect } from "./tools/createRedirect.js";
 import { deleteRedirect } from "./tools/deleteRedirect.js";
 import { getStoreCounts } from "./tools/getStoreCounts.js";
 import { getProductIssues } from "./tools/getProductIssues.js";
+import { startBulkExport } from "./tools/startBulkExport.js";
+import { getBulkOperationStatus } from "./tools/getBulkOperationStatus.js";
+import { getBulkOperationResults } from "./tools/getBulkOperationResults.js";
 
 // Import OAuth helpers
 import { runOAuthFlow, loadToken } from "./oauth.js";
@@ -123,6 +126,9 @@ async function startServer(accessToken: string, domain: string): Promise<void> {
   deleteRedirect.initialize(shopifyClient);
   getStoreCounts.initialize(shopifyClient);
   getProductIssues.initialize(shopifyClient);
+  startBulkExport.initialize(shopifyClient);
+  getBulkOperationStatus.initialize(shopifyClient);
+  getBulkOperationResults.initialize(shopifyClient);
 
   // Set up MCP server
   const server = new McpServer({
@@ -1037,6 +1043,57 @@ async function startServer(accessToken: string, domain: string): Promise<void> {
     },
     async (args) => {
       const result = await getProductIssues.execute(args);
+      return {
+        content: [{ type: "text", text: JSON.stringify(result) }]
+      };
+    }
+  );
+
+  // ==================== BULK OPERATIONS TOOLS ====================
+
+  // Start bulk export
+  server.tool(
+    "start-bulk-export",
+    {
+      type: z.enum(["products", "orders", "customers", "inventory", "custom"]).describe("Type of export to run"),
+      query: z.string().optional().describe("Filter query (e.g., 'status:active' for products)"),
+      dateFrom: z.string().optional().describe("Start date for orders (ISO 8601)"),
+      dateTo: z.string().optional().describe("End date for orders (ISO 8601)"),
+      customQuery: z.string().optional().describe("Custom GraphQL query (required if type='custom')"),
+      includeMetafields: z.boolean().default(false).describe("Include metafields in export")
+    },
+    async (args) => {
+      const result = await startBulkExport.execute(args);
+      return {
+        content: [{ type: "text", text: JSON.stringify(result) }]
+      };
+    }
+  );
+
+  // Get bulk operation status
+  server.tool(
+    "get-bulk-operation-status",
+    {
+      operationId: z.string().optional().describe("Specific operation ID to check. If omitted, checks the current/most recent operation.")
+    },
+    async (args) => {
+      const result = await getBulkOperationStatus.execute(args);
+      return {
+        content: [{ type: "text", text: JSON.stringify(result) }]
+      };
+    }
+  );
+
+  // Get bulk operation results
+  server.tool(
+    "get-bulk-operation-results",
+    {
+      operationId: z.string().optional().describe("Specific operation ID. If omitted, uses the most recent completed operation."),
+      format: z.enum(["summary", "sample", "full"]).default("summary").describe("Output format: 'summary' (metadata only), 'sample' (first N objects), 'full' (up to 1000 objects)"),
+      sampleSize: z.number().default(10).describe("Number of objects to return for 'sample' format (default 10)")
+    },
+    async (args) => {
+      const result = await getBulkOperationResults.execute(args);
       return {
         content: [{ type: "text", text: JSON.stringify(result) }]
       };

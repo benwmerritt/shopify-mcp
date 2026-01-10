@@ -168,6 +168,11 @@ MYSHOPIFY_DOMAIN=your-store.myshopify.com
 - `get-store-counts` - Get all key counts in one call (products, variants, orders, customers, collections)
 - `get-product-issues` - Audit products for problems (zero inventory, low stock, missing images, zero price)
 
+### Bulk Operations
+- `start-bulk-export` - Start async bulk export (products, orders, customers, inventory, or custom query)
+- `get-bulk-operation-status` - Check progress of bulk operation
+- `get-bulk-operation-results` - Download and parse completed results (summary, sample, or full)
+
 ## Debugging
 
 Tail Claude Desktop logs:
