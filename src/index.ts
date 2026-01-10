@@ -3,6 +3,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 // import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
+import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
 // import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
 import express, { Request, Response } from "express";
 import { randomUUID } from "node:crypto";
@@ -1574,20 +1575,30 @@ async function startServer(accessToken: string, domain: string): Promise<void> {
     // MCP endpoint - client connects here for server-sent events
     // Each connection gets its own McpServer instance (MCP servers are stateful per-connection)
     app.get("/mcp", validateApiKey, async (req: Request, res: Response) => {
-      const sessionId = Date.now().toString();
-      console.error(`SSE connection from ${req.ip}, session: ${sessionId}`);
+      const apiKey = req.query.apiKey as string | undefined;
 
-      // Create a NEW server for this connection
-      const server = createMcpServer();
-      const transport = new SSEServerTransport("/messages", res);
-      sessions.set(sessionId, { server, transport });
+      try {
+        // Create a NEW server for this connection
+        const server = createMcpServer();
+        const endpointPath = apiKey
+          ? `/messages?apiKey=${encodeURIComponent(apiKey)}`
+          : "/messages";
+        const transport = new SSEServerTransport(endpointPath, res);
+        sessions.set(transport.sessionId, { server, transport });
 
-      res.on("close", () => {
-        sessions.delete(sessionId);
-        console.error(`SSE connection closed: ${sessionId}`);
-      });
+        console.error(
+          `SSE connection from ${req.ip}, session: ${transport.sessionId}`,
+        );
 
-      await server.connect(transport);
+        res.on("close", () => {
+          sessions.delete(transport.sessionId);
+          console.error(`SSE connection closed: ${transport.sessionId}`);
+        });
+
+        await server.connect(transport);
+      } catch (err) {
+        console.error(`SSE error: ${err}`);
+      }
     });
 
     // Messages endpoint - client sends messages here
@@ -1596,10 +1607,15 @@ async function startServer(accessToken: string, domain: string): Promise<void> {
       express.json(),
       validateApiKey,
       async (req: Request, res: Response) => {
-        // Find the session for this request (simplified: use most recent)
-        const session = Array.from(sessions.values()).pop();
+        console.error(`POST /messages received`);
+        const sessionId = req.query.sessionId as string | undefined;
+        if (!sessionId) {
+          res.status(400).json({ error: "Missing sessionId" });
+          return;
+        }
+        const session = sessions.get(sessionId);
         if (!session) {
-          res.status(400).json({ error: "No active SSE connection" });
+          res.status(404).json({ error: "No active SSE connection" });
           return;
         }
         await session.transport.handlePostMessage(req, res, req.body);
