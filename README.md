@@ -98,6 +98,29 @@ Config paths:
 - macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`
 - Windows: `%APPDATA%/Claude/claude_desktop_config.json`
 
+### Remote MCP (Railway, etc.)
+
+Deploy as a remote MCP server for use with Claude.ai or other remote clients.
+
+**1. Get token locally (one-time):**
+```bash
+npx shopify-mcp --oauth --domain=your-store.myshopify.com --clientId=xxx --clientSecret=yyy
+# Token saved to ~/.shopify-mcp/tokens.json
+```
+
+**2. Set environment variables on your hosting platform:**
+```bash
+REMOTE_MCP=true
+SHOPIFY_ACCESS_TOKEN=shpat_xxx   # From tokens.json
+MYSHOPIFY_DOMAIN=your-store.myshopify.com
+PORT=3000                         # Optional, defaults to 3000
+```
+
+**3. Deploy and connect:**
+- Health check: `GET /health`
+- SSE endpoint: `GET /sse`
+- Messages: `POST /messages`
+
 ### Environment variables (optional)
 
 ```bash

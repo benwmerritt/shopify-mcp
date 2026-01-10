@@ -2,6 +2,8 @@
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
+import express, { Request, Response } from "express";
 import dotenv from "dotenv";
 import { GraphQLClient } from "graphql-request";
 import minimist from "minimist";
@@ -66,6 +68,8 @@ const SHOPIFY_CLIENT_ID = argv.clientId || process.env.SHOPIFY_CLIENT_ID;
 const SHOPIFY_CLIENT_SECRET = argv.clientSecret || process.env.SHOPIFY_CLIENT_SECRET;
 const OAUTH_SCOPES = argv.scopes || process.env.SHOPIFY_SCOPES;
 const RUN_OAUTH = argv.oauth === true;
+const REMOTE_MODE = argv.remote === true || process.env.REMOTE_MCP === "true";
+const PORT = parseInt(process.env.PORT || "3000", 10);
 
 /**
  * Start the MCP server with the given access token
@@ -1100,9 +1104,58 @@ async function startServer(accessToken: string, domain: string): Promise<void> {
     }
   );
 
-  // Start the server
-  const transport = new StdioServerTransport();
-  await server.connect(transport);
+  // Start the server based on mode
+  if (REMOTE_MODE) {
+    // Remote mode: Express + SSE
+    const app = express();
+
+    // Store active transports by session
+    const transports = new Map<string, SSEServerTransport>();
+
+    // Health check endpoint
+    app.get("/health", (_req: Request, res: Response) => {
+      res.json({ status: "ok", mode: "remote", domain: domain });
+    });
+
+    // SSE endpoint - client connects here for server-sent events
+    app.get("/sse", async (req: Request, res: Response) => {
+      console.error(`SSE connection from ${req.ip}`);
+
+      const transport = new SSEServerTransport("/messages", res);
+      const sessionId = Date.now().toString();
+      transports.set(sessionId, transport);
+
+      res.on("close", () => {
+        transports.delete(sessionId);
+        console.error(`SSE connection closed: ${sessionId}`);
+      });
+
+      await transport.start();
+      await server.connect(transport);
+    });
+
+    // Messages endpoint - client sends messages here
+    app.post("/messages", express.json(), async (req: Request, res: Response) => {
+      // Find the transport for this request (simplified: use most recent)
+      const transport = Array.from(transports.values()).pop();
+      if (!transport) {
+        res.status(400).json({ error: "No active SSE connection" });
+        return;
+      }
+      await transport.handlePostMessage(req, res, req.body);
+    });
+
+    app.listen(PORT, () => {
+      console.error(`Shopify MCP Server running in REMOTE mode`);
+      console.error(`  Health: http://localhost:${PORT}/health`);
+      console.error(`  SSE:    http://localhost:${PORT}/sse`);
+      console.error(`  Store:  ${domain}`);
+    });
+  } else {
+    // Local mode: stdio transport
+    const transport = new StdioServerTransport();
+    await server.connect(transport);
+  }
 }
 
 /**
