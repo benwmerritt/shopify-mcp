@@ -164,6 +164,10 @@ MYSHOPIFY_DOMAIN=your-store.myshopify.com
 - `create-redirect`
 - `delete-redirect`
 
+### Analytics
+- `get-store-counts` - Get all key counts in one call (products, variants, orders, customers, collections)
+- `get-product-issues` - Audit products for problems (zero inventory, low stock, missing images, zero price)
+
 ## Debugging
 
 Tail Claude Desktop logs:

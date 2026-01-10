@@ -45,6 +45,8 @@ import { completeDraftOrder } from "./tools/completeDraftOrder.js";
 import { getRedirects } from "./tools/getRedirects.js";
 import { createRedirect } from "./tools/createRedirect.js";
 import { deleteRedirect } from "./tools/deleteRedirect.js";
+import { getStoreCounts } from "./tools/getStoreCounts.js";
+import { getProductIssues } from "./tools/getProductIssues.js";
 
 // Import OAuth helpers
 import { runOAuthFlow, loadToken } from "./oauth.js";
@@ -119,6 +121,8 @@ async function startServer(accessToken: string, domain: string): Promise<void> {
   getRedirects.initialize(shopifyClient);
   createRedirect.initialize(shopifyClient);
   deleteRedirect.initialize(shopifyClient);
+  getStoreCounts.initialize(shopifyClient);
+  getProductIssues.initialize(shopifyClient);
 
   // Set up MCP server
   const server = new McpServer({
@@ -998,6 +1002,41 @@ async function startServer(accessToken: string, domain: string): Promise<void> {
     },
     async (args) => {
       const result = await deleteRedirect.execute(args);
+      return {
+        content: [{ type: "text", text: JSON.stringify(result) }]
+      };
+    }
+  );
+
+  // ==================== ANALYTICS TOOLS ====================
+
+  // Get store counts
+  server.tool(
+    "get-store-counts",
+    {},
+    async (args) => {
+      const result = await getStoreCounts.execute(args);
+      return {
+        content: [{ type: "text", text: JSON.stringify(result) }]
+      };
+    }
+  );
+
+  // Get product issues (audit tool)
+  server.tool(
+    "get-product-issues",
+    {
+      issues: z.array(z.enum([
+        "zero_inventory",
+        "low_stock",
+        "missing_images",
+        "zero_price"
+      ])).optional().describe("Which issues to check (defaults to all)"),
+      lowStockThreshold: z.number().default(10).describe("Threshold for low stock warning"),
+      sampleSize: z.number().default(10).describe("Number of example products to return per issue")
+    },
+    async (args) => {
+      const result = await getProductIssues.execute(args);
       return {
         content: [{ type: "text", text: JSON.stringify(result) }]
       };
