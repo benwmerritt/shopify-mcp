@@ -7,23 +7,20 @@ import { GraphQLClient } from "graphql-request";
 import minimist from "minimist";
 import { z } from "zod";
 
-// Import tools
-import { getCustomerOrders } from "./tools/getCustomerOrders.js";
+// Import merged tools
+import { products } from "./tools/products.js";
+import { orders } from "./tools/orders.js";
+import { draftOrders } from "./tools/draftOrders.js";
+
+// Import other tools
 import { getCustomers } from "./tools/getCustomers.js";
-import { getOrderById } from "./tools/getOrderById.js";
-import { getOrders } from "./tools/getOrders.js";
-import { getProductById } from "./tools/getProductById.js";
-import { getProducts } from "./tools/getProducts.js";
 import { updateCustomer } from "./tools/updateCustomer.js";
 import { updateOrder } from "./tools/updateOrder.js";
 import { createProduct } from "./tools/createProduct.js";
 import { updateProduct } from "./tools/updateProduct.js";
-
-// Import new data cleanup tools
 import { deleteProduct } from "./tools/deleteProduct.js";
 import { deleteVariant } from "./tools/deleteVariant.js";
 import { deleteProductImages } from "./tools/deleteProductImages.js";
-import { searchProducts } from "./tools/searchProducts.js";
 import { bulkUpdateProducts } from "./tools/bulkUpdateProducts.js";
 import { bulkDeleteProducts } from "./tools/bulkDeleteProducts.js";
 import { getCollections } from "./tools/getCollections.js";
@@ -37,8 +34,6 @@ import { getMetafields } from "./tools/getMetafields.js";
 import { deleteMetafield } from "./tools/deleteMetafield.js";
 import { setMetafield } from "./tools/setMetafield.js";
 import { getLocations } from "./tools/getLocations.js";
-import { getDraftOrders } from "./tools/getDraftOrders.js";
-import { getDraftOrderById } from "./tools/getDraftOrderById.js";
 import { createDraftOrder } from "./tools/createDraftOrder.js";
 import { updateDraftOrder } from "./tools/updateDraftOrder.js";
 import { completeDraftOrder } from "./tools/completeDraftOrder.js";
@@ -86,23 +81,20 @@ async function startServer(accessToken: string, domain: string): Promise<void> {
     }
   );
 
-  // Initialize tools with shopifyClient
-  getProducts.initialize(shopifyClient);
-  getProductById.initialize(shopifyClient);
+  // Initialize merged tools
+  products.initialize(shopifyClient);
+  orders.initialize(shopifyClient);
+  draftOrders.initialize(shopifyClient);
+
+  // Initialize other tools
   getCustomers.initialize(shopifyClient);
-  getOrders.initialize(shopifyClient);
-  getOrderById.initialize(shopifyClient);
-  updateOrder.initialize(shopifyClient);
-  getCustomerOrders.initialize(shopifyClient);
   updateCustomer.initialize(shopifyClient);
+  updateOrder.initialize(shopifyClient);
   createProduct.initialize(shopifyClient);
   updateProduct.initialize(shopifyClient);
-
-  // Initialize new data cleanup tools
   deleteProduct.initialize(shopifyClient);
   deleteVariant.initialize(shopifyClient);
   deleteProductImages.initialize(shopifyClient);
-  searchProducts.initialize(shopifyClient);
   bulkUpdateProducts.initialize(shopifyClient);
   bulkDeleteProducts.initialize(shopifyClient);
   getCollections.initialize(shopifyClient);
@@ -116,8 +108,6 @@ async function startServer(accessToken: string, domain: string): Promise<void> {
   deleteMetafield.initialize(shopifyClient);
   setMetafield.initialize(shopifyClient);
   getLocations.initialize(shopifyClient);
-  getDraftOrders.initialize(shopifyClient);
-  getDraftOrderById.initialize(shopifyClient);
   createDraftOrder.initialize(shopifyClient);
   updateDraftOrder.initialize(shopifyClient);
   completeDraftOrder.initialize(shopifyClient);
@@ -138,32 +128,34 @@ async function startServer(accessToken: string, domain: string): Promise<void> {
       "MCP Server for Shopify API, enabling interaction with store data through GraphQL API"
   });
 
-  // Add tools individually, using their schemas directly
+  // ==================== MERGED PRODUCT TOOL ====================
+  // Replaces: get-products, get-product-by-id, search-products
   server.tool(
-    "get-products",
+    "products",
     {
-      searchTitle: z.string().optional(),
-      limit: z.number().default(10),
+      id: z.string().optional().describe("Product ID for single product lookup (can be numeric or full GID)"),
+      title: z.string().optional().describe("Filter by product title (partial match)"),
+      status: z.enum(["ACTIVE", "DRAFT", "ARCHIVED"]).optional().describe("Filter by product status"),
+      vendor: z.string().optional().describe("Filter by vendor name (exact match)"),
+      tag: z.string().optional().describe("Filter products that have this tag"),
+      tagNot: z.string().optional().describe("Filter products that do NOT have this tag"),
+      productType: z.string().optional().describe("Filter by product type"),
+      inventoryTotal: z.number().optional().describe("Filter by exact inventory count"),
+      inventoryLessThan: z.number().optional().describe("Filter products with inventory less than this"),
+      inventoryGreaterThan: z.number().optional().describe("Filter products with inventory greater than this"),
+      createdAfter: z.string().optional().describe("Filter products created after this date (ISO 8601)"),
+      createdBefore: z.string().optional().describe("Filter products created before this date (ISO 8601)"),
+      updatedAfter: z.string().optional().describe("Filter products updated after this date (ISO 8601)"),
+      hasImages: z.boolean().optional().describe("Filter products that have (true) or don't have (false) images"),
+      limit: z.number().default(50).describe("Maximum number of products to return (max 250)"),
+      cursor: z.string().optional().describe("Pagination cursor for fetching next page"),
       fields: z.union([
         z.enum(["slim", "standard", "full"]),
         z.array(z.string())
       ]).default("slim").describe("Fields to return: 'slim' (default), 'standard', 'full', or array of field names")
     },
     async (args) => {
-      const result = await getProducts.execute(args);
-      return {
-        content: [{ type: "text", text: JSON.stringify(result) }]
-      };
-    }
-  );
-
-  server.tool(
-    "get-product-by-id",
-    {
-      productId: z.string().min(1)
-    },
-    async (args) => {
-      const result = await getProductById.execute(args);
+      const result = await products.execute(args);
       return {
         content: [{ type: "text", text: JSON.stringify(result) }]
       };
@@ -185,29 +177,19 @@ async function startServer(accessToken: string, domain: string): Promise<void> {
     }
   );
 
+  // ==================== MERGED ORDERS TOOL ====================
+  // Replaces: get-orders, get-order-by-id, get-customer-orders
   server.tool(
-    "get-orders",
+    "orders",
     {
-      status: z.enum(["any", "open", "closed", "cancelled"]).default("any"),
-      limit: z.number().default(10),
+      id: z.string().optional().describe("Order ID for single order lookup (can be numeric or full GID)"),
+      customerId: z.string().optional().describe("Filter orders by customer ID (numeric)"),
+      status: z.enum(["any", "open", "closed", "cancelled"]).default("any").describe("Filter by order status"),
+      limit: z.number().default(10).describe("Maximum number of orders to return"),
       cursor: z.string().optional().describe("Pagination cursor for fetching next page")
     },
     async (args) => {
-      const result = await getOrders.execute(args);
-      return {
-        content: [{ type: "text", text: JSON.stringify(result) }]
-      };
-    }
-  );
-
-  // Add the getOrderById tool
-  server.tool(
-    "get-order-by-id",
-    {
-      orderId: z.string().min(1)
-    },
-    async (args) => {
-      const result = await getOrderById.execute(args);
+      const result = await orders.execute(args);
       return {
         content: [{ type: "text", text: JSON.stringify(result) }]
       };
@@ -258,25 +240,6 @@ async function startServer(accessToken: string, domain: string): Promise<void> {
     },
     async (args) => {
       const result = await updateOrder.execute(args);
-      return {
-        content: [{ type: "text", text: JSON.stringify(result) }]
-      };
-    }
-  );
-
-  // Add the getCustomerOrders tool
-  server.tool(
-    "get-customer-orders",
-    {
-      customerId: z
-        .string()
-        .regex(/^\d+$/, "Customer ID must be numeric")
-        .describe("Shopify customer ID, numeric excluding gid prefix"),
-      limit: z.number().default(10),
-      cursor: z.string().optional().describe("Pagination cursor for fetching next page")
-    },
-    async (args) => {
-      const result = await getCustomerOrders.execute(args);
       return {
         content: [{ type: "text", text: JSON.stringify(result) }]
       };
@@ -448,38 +411,6 @@ async function startServer(accessToken: string, domain: string): Promise<void> {
     },
     async (args) => {
       const result = await deleteProductImages.execute(args);
-      return {
-        content: [{ type: "text", text: JSON.stringify(result) }]
-      };
-    }
-  );
-
-  // Advanced product search with filters
-  server.tool(
-    "search-products",
-    {
-      title: z.string().optional().describe("Filter by product title (partial match)"),
-      status: z.enum(["ACTIVE", "DRAFT", "ARCHIVED"]).optional().describe("Filter by product status"),
-      vendor: z.string().optional().describe("Filter by vendor name (exact match)"),
-      tag: z.string().optional().describe("Filter products that have this tag"),
-      tagNot: z.string().optional().describe("Filter products that do NOT have this tag"),
-      productType: z.string().optional().describe("Filter by product type"),
-      inventoryTotal: z.number().optional().describe("Filter by exact inventory count"),
-      inventoryLessThan: z.number().optional().describe("Filter products with inventory less than this"),
-      inventoryGreaterThan: z.number().optional().describe("Filter products with inventory greater than this"),
-      createdAfter: z.string().optional().describe("Filter products created after this date (ISO 8601)"),
-      createdBefore: z.string().optional().describe("Filter products created before this date (ISO 8601)"),
-      updatedAfter: z.string().optional().describe("Filter products updated after this date (ISO 8601)"),
-      hasImages: z.boolean().optional().describe("Filter products that have (true) or don't have (false) images"),
-      limit: z.number().default(50).describe("Maximum number of products to return (max 250)"),
-      cursor: z.string().optional().describe("Pagination cursor for fetching next page"),
-      fields: z.union([
-        z.enum(["slim", "standard", "full"]),
-        z.array(z.string())
-      ]).default("slim").describe("Fields to return: 'slim' (default), 'standard', 'full', or array of field names")
-    },
-    async (args) => {
-      const result = await searchProducts.execute(args);
       return {
         content: [{ type: "text", text: JSON.stringify(result) }]
       };
@@ -790,31 +721,18 @@ async function startServer(accessToken: string, domain: string): Promise<void> {
 
   // ==================== DRAFT ORDER TOOLS ====================
 
-  // Get draft orders
+  // Merged draft-orders tool (replaces get-draft-orders and get-draft-order-by-id)
   server.tool(
-    "get-draft-orders",
+    "draft-orders",
     {
+      id: z.string().optional().describe("Draft order ID for single lookup (can be numeric or full GID)"),
       status: z.enum(["OPEN", "INVOICE_SENT", "COMPLETED"]).optional().describe("Filter by draft order status"),
       query: z.string().optional().describe("Search query (Shopify search syntax)"),
       limit: z.number().default(50).describe("Maximum number of draft orders to return"),
       cursor: z.string().optional().describe("Pagination cursor for fetching next page")
     },
     async (args) => {
-      const result = await getDraftOrders.execute(args);
-      return {
-        content: [{ type: "text", text: JSON.stringify(result) }]
-      };
-    }
-  );
-
-  // Get draft order by ID
-  server.tool(
-    "get-draft-order-by-id",
-    {
-      draftOrderId: z.string().min(1).describe("Draft order ID (can be numeric or full GID)")
-    },
-    async (args) => {
-      const result = await getDraftOrderById.execute(args);
+      const result = await draftOrders.execute(args);
       return {
         content: [{ type: "text", text: JSON.stringify(result) }]
       };
