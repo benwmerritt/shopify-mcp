@@ -134,16 +134,18 @@ async function startServer(accessToken: string, domain: string): Promise<void> {
   getBulkOperationStatus.initialize(shopifyClient);
   getBulkOperationResults.initialize(shopifyClient);
 
-  // Set up MCP server
-  const server = new McpServer({
-    name: "shopify",
-    version: "1.0.0",
-    description:
-      "MCP Server for Shopify API, enabling interaction with store data through GraphQL API"
-  });
+  // Function to create a new MCP server with all tools registered
+  // This is called per-connection in remote mode, once in local mode
+  function createMcpServer(): McpServer {
+    const server = new McpServer({
+      name: "shopify",
+      version: "1.0.0",
+      description:
+        "MCP Server for Shopify API, enabling interaction with store data through GraphQL API"
+    });
 
-  // Add tools individually, using their schemas directly
-  server.tool(
+    // Add tools individually, using their schemas directly
+    server.tool(
     "get-products",
     {
       searchTitle: z.string().optional(),
@@ -1104,13 +1106,16 @@ async function startServer(accessToken: string, domain: string): Promise<void> {
     }
   );
 
+    return server;
+  }
+
   // Start the server based on mode
   if (REMOTE_MODE) {
     // Remote mode: Express + SSE
     const app = express();
 
-    // Store active transports by session
-    const transports = new Map<string, SSEServerTransport>();
+    // Store active sessions: each connection gets its own server + transport
+    const sessions = new Map<string, { server: McpServer; transport: SSEServerTransport }>();
 
     // API key validation middleware
     const validateApiKey = (req: Request, res: Response, next: () => void) => {
@@ -1136,15 +1141,18 @@ async function startServer(accessToken: string, domain: string): Promise<void> {
     });
 
     // MCP endpoint - client connects here for server-sent events
+    // Each connection gets its own McpServer instance (MCP servers are stateful per-connection)
     app.get("/mcp", validateApiKey, async (req: Request, res: Response) => {
-      console.error(`SSE connection from ${req.ip}`);
-
-      const transport = new SSEServerTransport("/messages", res);
       const sessionId = Date.now().toString();
-      transports.set(sessionId, transport);
+      console.error(`SSE connection from ${req.ip}, session: ${sessionId}`);
+
+      // Create a NEW server for this connection
+      const server = createMcpServer();
+      const transport = new SSEServerTransport("/messages", res);
+      sessions.set(sessionId, { server, transport });
 
       res.on("close", () => {
-        transports.delete(sessionId);
+        sessions.delete(sessionId);
         console.error(`SSE connection closed: ${sessionId}`);
       });
 
@@ -1153,13 +1161,13 @@ async function startServer(accessToken: string, domain: string): Promise<void> {
 
     // Messages endpoint - client sends messages here
     app.post("/messages", express.json(), validateApiKey, async (req: Request, res: Response) => {
-      // Find the transport for this request (simplified: use most recent)
-      const transport = Array.from(transports.values()).pop();
-      if (!transport) {
+      // Find the session for this request (simplified: use most recent)
+      const session = Array.from(sessions.values()).pop();
+      if (!session) {
         res.status(400).json({ error: "No active SSE connection" });
         return;
       }
-      await transport.handlePostMessage(req, res, req.body);
+      await session.transport.handlePostMessage(req, res, req.body);
     });
 
     app.listen(PORT, () => {
@@ -1169,7 +1177,8 @@ async function startServer(accessToken: string, domain: string): Promise<void> {
       console.error(`  Store:  ${domain}`);
     });
   } else {
-    // Local mode: stdio transport
+    // Local mode: stdio transport - create single server instance
+    const server = createMcpServer();
     const transport = new StdioServerTransport();
     await server.connect(transport);
   }
