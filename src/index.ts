@@ -1135,8 +1135,8 @@ async function startServer(accessToken: string, domain: string): Promise<void> {
       res.json({ status: "ok", mode: "remote", domain: domain });
     });
 
-    // SSE endpoint - client connects here for server-sent events
-    app.get("/sse", validateApiKey, async (req: Request, res: Response) => {
+    // MCP endpoint - client connects here for server-sent events
+    app.get("/mcp", validateApiKey, async (req: Request, res: Response) => {
       console.error(`SSE connection from ${req.ip}`);
 
       const transport = new SSEServerTransport("/messages", res);
@@ -1165,7 +1165,7 @@ async function startServer(accessToken: string, domain: string): Promise<void> {
     app.listen(PORT, () => {
       console.error(`Shopify MCP Server running in REMOTE mode`);
       console.error(`  Health: http://localhost:${PORT}/health`);
-      console.error(`  SSE:    http://localhost:${PORT}/sse`);
+      console.error(`  MCP:    http://localhost:${PORT}/mcp`);
       console.error(`  Store:  ${domain}`);
     });
   } else {

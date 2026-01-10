@@ -118,8 +118,8 @@ PORT=3000                         # Optional, defaults to 3000
 
 **3. Deploy and connect:**
 - Health check: `GET /health`
-- SSE endpoint: `GET /sse`
-- Messages: `POST /messages`
+- MCP endpoint: `GET /mcp?apiKey=xxx`
+- Messages: `POST /messages?apiKey=xxx`
 
 ### Environment variables (optional)
 
