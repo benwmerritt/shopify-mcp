@@ -55,6 +55,7 @@ import { getProductIssues } from "./tools/getProductIssues.js";
 import { startBulkExport } from "./tools/startBulkExport.js";
 import { getBulkOperationStatus } from "./tools/getBulkOperationStatus.js";
 import { getBulkOperationResults } from "./tools/getBulkOperationResults.js";
+import { getStatus } from "./tools/getStatus.js";
 
 // Import OAuth helpers
 import { runOAuthFlow, loadToken } from "./oauth.js";
@@ -137,6 +138,7 @@ async function startServer(accessToken: string, domain: string): Promise<void> {
   startBulkExport.initialize(shopifyClient);
   getBulkOperationStatus.initialize(shopifyClient);
   getBulkOperationResults.initialize(shopifyClient);
+  getStatus.initialize(shopifyClient);
 
   // Function to create a new MCP server with all tools registered
   // This is called per-connection in remote mode, once in local mode
@@ -1520,6 +1522,18 @@ async function startServer(accessToken: string, domain: string): Promise<void> {
         const result = await getBulkOperationResults.execute(args);
         return {
           content: [{ type: "text", text: JSON.stringify(result) }],
+        };
+      },
+    );
+
+    // Status/diagnostic tool
+    server.tool(
+      "get-status",
+      {},
+      async () => {
+        const result = await getStatus.execute();
+        return {
+          content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
         };
       },
     );
