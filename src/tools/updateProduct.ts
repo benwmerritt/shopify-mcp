@@ -29,6 +29,7 @@ const UpdateProductInputSchema = z.object({
   descriptionHtml: z.string().optional(),
   vendor: z.string().optional(),
   productType: z.string().optional(),
+  category: z.string().optional().describe("Taxonomy category GID (e.g., 'gid://shopify/TaxonomyCategory/sg-4-17-2-17'). Use search-taxonomy to find IDs."),
   tags: z.array(z.string()).optional(),
   status: z.enum(["ACTIVE", "DRAFT", "ARCHIVED"]).optional(),
 
@@ -120,6 +121,11 @@ const updateProduct = {
               descriptionHtml
               vendor
               productType
+              category {
+                id
+                name
+                fullName
+              }
               status
               tags
               variants(first: 100) {
@@ -162,6 +168,7 @@ const updateProduct = {
       if (input.descriptionHtml !== undefined) productInput.descriptionHtml = input.descriptionHtml;
       if (input.vendor !== undefined) productInput.vendor = input.vendor;
       if (input.productType !== undefined) productInput.productType = input.productType;
+      if (input.category !== undefined) productInput.category = input.category;
       if (input.tags !== undefined) productInput.tags = input.tags;
       if (input.status !== undefined) productInput.status = input.status;
 

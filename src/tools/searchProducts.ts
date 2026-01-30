@@ -4,9 +4,9 @@ import { z } from "zod";
 
 // Field presets for controlling response size
 const FIELD_PRESETS: Record<string, string[] | null> = {
-  slim: ["id", "title", "handle", "vendor", "status", "tags"],
-  standard: ["id", "title", "handle", "vendor", "status", "tags",
-             "description", "productType", "createdAt", "updatedAt",
+  slim: ["id", "title", "handle", "vendor", "productType", "category", "status", "tags"],
+  standard: ["id", "title", "handle", "vendor", "productType", "category", "status", "tags",
+             "description", "createdAt", "updatedAt",
              "totalInventory", "priceRange", "hasImages"],
   full: null  // return everything
 };
@@ -187,6 +187,11 @@ const searchProducts = {
                 status
                 vendor
                 productType
+                category {
+                  id
+                  name
+                  fullName
+                }
                 tags
                 createdAt
                 updatedAt
@@ -263,6 +268,7 @@ const searchProducts = {
           status: product.status,
           vendor: product.vendor,
           productType: product.productType,
+          category: product.category,
           tags: product.tags,
           createdAt: product.createdAt,
           updatedAt: product.updatedAt,

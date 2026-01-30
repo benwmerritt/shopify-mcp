@@ -83,6 +83,12 @@ const getProductById = {
             }
             tags
             vendor
+            productType
+            category {
+              id
+              name
+              fullName
+            }
           }
         }
       `;
@@ -152,7 +158,9 @@ const getProductById = {
         variants,
         collections,
         tags: product.tags,
-        vendor: product.vendor
+        vendor: product.vendor,
+        productType: product.productType,
+        category: product.category
       };
 
       return { product: formattedProduct };

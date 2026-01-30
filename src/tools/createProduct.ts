@@ -25,6 +25,7 @@ const CreateProductInputSchema = z.object({
   descriptionHtml: z.string().optional(),
   vendor: z.string().optional(),
   productType: z.string().optional(),
+  category: z.string().optional().describe("Taxonomy category GID (e.g., 'gid://shopify/TaxonomyCategory/sg-4-17-2-17'). Use search-taxonomy to find IDs."),
   tags: z.array(z.string()).optional(),
   status: z.enum(["ACTIVE", "DRAFT", "ARCHIVED"]).default("DRAFT"),
 
@@ -72,6 +73,11 @@ const createProduct = {
               descriptionHtml
               vendor
               productType
+              category {
+                id
+                name
+                fullName
+              }
               status
               tags
               variants(first: 50) {
@@ -114,6 +120,7 @@ const createProduct = {
       if (input.descriptionHtml) productInput.descriptionHtml = input.descriptionHtml;
       if (input.vendor) productInput.vendor = input.vendor;
       if (input.productType) productInput.productType = input.productType;
+      if (input.category) productInput.category = input.category;
       if (input.tags) productInput.tags = input.tags;
 
       // Handle variants with options

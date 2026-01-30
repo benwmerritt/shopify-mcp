@@ -56,6 +56,7 @@ import { startBulkExport } from "./tools/startBulkExport.js";
 import { getBulkOperationStatus } from "./tools/getBulkOperationStatus.js";
 import { getBulkOperationResults } from "./tools/getBulkOperationResults.js";
 import { getStatus } from "./tools/getStatus.js";
+import { searchTaxonomy } from "./tools/searchTaxonomy.js";
 
 // Import OAuth helpers
 import { runOAuthFlow, loadToken } from "./oauth.js";
@@ -139,6 +140,7 @@ async function startServer(accessToken: string, domain: string): Promise<void> {
   getBulkOperationStatus.initialize(shopifyClient);
   getBulkOperationResults.initialize(shopifyClient);
   getStatus.initialize(shopifyClient);
+  searchTaxonomy.initialize(shopifyClient);
 
   // Function to create a new MCP server with all tools registered
   // This is called per-connection in remote mode, once in local mode
@@ -1532,6 +1534,24 @@ async function startServer(accessToken: string, domain: string): Promise<void> {
       {},
       async () => {
         const result = await getStatus.execute();
+        return {
+          content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
+        };
+      },
+    );
+
+    // Taxonomy search tool
+    server.tool(
+      "search-taxonomy",
+      {
+        search: z.string().optional().describe("Search term to find categories"),
+        childrenOf: z.string().optional().describe("Category GID to get children of"),
+        siblingsOf: z.string().optional().describe("Category GID to get siblings of"),
+        descendantsOf: z.string().optional().describe("Category GID to get descendants of"),
+        limit: z.number().default(25).describe("Maximum categories to return"),
+      },
+      async (args) => {
+        const result = await searchTaxonomy.execute(args);
         return {
           content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
         };
