@@ -41,6 +41,9 @@ import { updateInventory } from "./tools/updateInventory.js";
 import { getMetafields } from "./tools/getMetafields.js";
 import { deleteMetafield } from "./tools/deleteMetafield.js";
 import { setMetafield } from "./tools/setMetafield.js";
+import { createMetaobject } from "./tools/createMetaobject.js";
+import { listMetaobjects } from "./tools/listMetaobjects.js";
+import { getMetaobject } from "./tools/getMetaobject.js";
 import { getLocations } from "./tools/getLocations.js";
 import { getDraftOrders } from "./tools/getDraftOrders.js";
 import { getDraftOrderById } from "./tools/getDraftOrderById.js";
@@ -125,6 +128,9 @@ async function startServer(accessToken: string, domain: string): Promise<void> {
   getMetafields.initialize(shopifyClient);
   deleteMetafield.initialize(shopifyClient);
   setMetafield.initialize(shopifyClient);
+  createMetaobject.initialize(shopifyClient);
+  listMetaobjects.initialize(shopifyClient);
+  getMetaobject.initialize(shopifyClient);
   getLocations.initialize(shopifyClient);
   getDraftOrders.initialize(shopifyClient);
   getDraftOrderById.initialize(shopifyClient);
@@ -1053,6 +1059,86 @@ async function startServer(accessToken: string, domain: string): Promise<void> {
       },
       async (args) => {
         const result = await setMetafield.execute(args);
+        return {
+          content: [{ type: "text", text: JSON.stringify(result) }],
+        };
+      },
+    );
+
+    // ==================== METAOBJECT TOOLS ====================
+
+    // Create metaobject entry
+    server.tool(
+      "create-metaobject",
+      {
+        type: z
+          .string()
+          .min(1)
+          .describe("Metaobject definition type (for example 'size_chart')"),
+        fields: z
+          .array(
+            z.object({
+              key: z
+                .string()
+                .min(1)
+                .describe("Metaobject field key from the definition"),
+              value: z.string().describe("Field value as a string"),
+            }),
+          )
+          .min(1)
+          .describe("Field values to set on the new entry"),
+        handle: z
+          .string()
+          .min(1)
+          .optional()
+          .describe(
+            "Optional custom handle. Shopify auto-generates one if omitted",
+          ),
+      },
+      async (args) => {
+        const result = await createMetaobject.execute(args);
+        return {
+          content: [{ type: "text", text: JSON.stringify(result) }],
+        };
+      },
+    );
+
+    // List metaobject entries
+    server.tool(
+      "list-metaobjects",
+      {
+        type: z
+          .string()
+          .min(1)
+          .describe("Metaobject definition type to list entries for"),
+        limit: z
+          .number()
+          .default(25)
+          .describe("Maximum number of metaobject entries to return (max 250)"),
+        cursor: z
+          .string()
+          .optional()
+          .describe("Pagination cursor for fetching the next page"),
+      },
+      async (args) => {
+        const result = await listMetaobjects.execute(args);
+        return {
+          content: [{ type: "text", text: JSON.stringify(result) }],
+        };
+      },
+    );
+
+    // Get metaobject entry by ID
+    server.tool(
+      "get-metaobject",
+      {
+        id: z
+          .string()
+          .min(1)
+          .describe("Metaobject ID (can be numeric or full GID)"),
+      },
+      async (args) => {
+        const result = await getMetaobject.execute(args);
         return {
           content: [{ type: "text", text: JSON.stringify(result) }],
         };

@@ -1,6 +1,6 @@
 # Shopify Admin API Scopes
 
-## Required for MCP Tools (40 tools)
+## Required for MCP Tools (43 tools)
 
 Copy this comma-separated list:
 
@@ -23,8 +23,8 @@ read_customers,write_customers,read_price_rules,write_discounts,write_draft_orde
 | get-inventory-levels | read_inventory |
 | update-inventory | write_inventory |
 | get-locations | read_locations |
-| get-metafields | read_metaobjects |
-| set-metafield, delete-metafield | write_metaobjects |
+| get-metafields, list-metaobjects, get-metaobject | read_metaobjects |
+| set-metafield, delete-metafield, create-metaobject | write_metaobjects |
 | get-redirects | read_online_store_navigation |
 | create-redirect, delete-redirect | write_online_store_navigation |
 | start-bulk-export, get-bulk-operation-status, get-bulk-operation-results | read_products (+ others depending on export type) |
