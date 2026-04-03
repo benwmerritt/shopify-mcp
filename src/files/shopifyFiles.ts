@@ -56,12 +56,13 @@ export function mapShopifyFileNode(node: unknown): ShopifyFileRecord | null {
     return null;
   }
 
-  const typename = node.__typename;
+  const typedNode = node as { __typename: unknown };
+  const typename = typedNode.__typename;
   if (typeof typename !== "string") {
     return null;
   }
 
-  const base = node as {
+  const base = node as unknown as {
     id: string;
     alt?: string | null;
     fileStatus?: string | null;
@@ -71,7 +72,7 @@ export function mapShopifyFileNode(node: unknown): ShopifyFileRecord | null {
   };
 
   if (typename === "MediaImage") {
-    const mediaNode = node as {
+    const mediaNode = node as unknown as {
       id: string;
       alt?: string | null;
       fileStatus?: string | null;
@@ -98,7 +99,7 @@ export function mapShopifyFileNode(node: unknown): ShopifyFileRecord | null {
   }
 
   if (typename === "GenericFile") {
-    const genericNode = node as {
+    const genericNode = node as unknown as {
       id: string;
       alt?: string | null;
       fileStatus?: string | null;
@@ -125,7 +126,7 @@ export function mapShopifyFileNode(node: unknown): ShopifyFileRecord | null {
     };
   }
 
-  const otherNode = node as {
+  const otherNode = node as unknown as {
     id: string;
     alt?: string | null;
     fileStatus?: string | null;

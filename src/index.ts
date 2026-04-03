@@ -1063,6 +1063,7 @@ async function startServer(accessToken: string, domain: string): Promise<void> {
             "money",
             "rating",
             "url",
+            "link",
             "color",
             "product_reference",
             "variant_reference",
@@ -1076,6 +1077,7 @@ async function startServer(accessToken: string, domain: string): Promise<void> {
             "list.date",
             "list.date_time",
             "list.url",
+            "list.link",
             "list.color",
             "list.product_reference",
             "list.variant_reference",
@@ -1086,7 +1088,7 @@ async function startServer(accessToken: string, domain: string): Promise<void> {
           ])
           .default("single_line_text_field")
           .describe(
-            "Metafield type (determines how value is stored and validated)",
+            "Metafield type (determines how value is stored and validated). For `link`, pass a JSON string like {\"text\":\"Learn more\",\"url\":\"https://example.com\"}.",
           ),
       },
       async (args) => {
@@ -2031,7 +2033,7 @@ async function startServer(accessToken: string, domain: string): Promise<void> {
     });
 
     app.post("/uploads/shopify-files/:sessionId", (req: Request, res: Response) => {
-      upload.single("file")(req, res, (uploadError) => {
+      upload.single("file")(req, res, (uploadError: unknown) => {
         void (async () => {
           cleanupExpiredUploadSessions();
 
@@ -2127,7 +2129,7 @@ async function startServer(accessToken: string, domain: string): Promise<void> {
             return;
           }
 
-          const uploadedFile = req.file;
+          const uploadedFile = (req as Request & { file?: Express.Multer.File }).file;
           if (!uploadedFile) {
             sendUploadResult(
               req,

@@ -34,6 +34,7 @@ const SetMetafieldInputSchema = z.object({
     "rating",
     // URL
     "url",
+    "link",
     // Color
     "color",
     // Reference types
@@ -50,6 +51,7 @@ const SetMetafieldInputSchema = z.object({
     "list.date",
     "list.date_time",
     "list.url",
+    "list.link",
     "list.color",
     "list.product_reference",
     "list.variant_reference",
@@ -57,7 +59,7 @@ const SetMetafieldInputSchema = z.object({
     "list.file_reference",
     "list.page_reference",
     "list.metaobject_reference"
-  ]).default("single_line_text_field").describe("Metafield type (determines how value is stored and validated)")
+  ]).default("single_line_text_field").describe("Metafield type (determines how value is stored and validated). For `link`, pass a JSON string like {\"text\":\"Learn more\",\"url\":\"https://example.com\"}.")
 });
 
 type SetMetafieldInput = z.infer<typeof SetMetafieldInputSchema>;
