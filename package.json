@@ -36,6 +36,7 @@
     "graphql": "^16.6.0",
     "graphql-request": "^5.1.0",
     "minimist": "^1.2.8",
+    "multer": "^2.1.1",
     "open": "^10.1.0",
     "zod": "^3.21.4"
   },

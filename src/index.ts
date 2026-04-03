@@ -6,10 +6,14 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
 // import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
 import express, { Request, Response } from "express";
+import { mkdirSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 import dotenv from "dotenv";
 import { GraphQLClient } from "graphql-request";
 import minimist from "minimist";
+import multer from "multer";
 import { z } from "zod";
 
 // Import tools
@@ -62,9 +66,23 @@ import { getBulkOperationStatus } from "./tools/getBulkOperationStatus.js";
 import { getBulkOperationResults } from "./tools/getBulkOperationResults.js";
 import { getStatus } from "./tools/getStatus.js";
 import { searchTaxonomy } from "./tools/searchTaxonomy.js";
+import { createFileUploadSession } from "./tools/createFileUploadSession.js";
+import { getFileUploadSession } from "./tools/getFileUploadSession.js";
+import { getFiles } from "./tools/getFiles.js";
+import { attachFileToProduct } from "./tools/attachFileToProduct.js";
+import { detachFileFromProduct } from "./tools/detachFileFromProduct.js";
 
 // Import OAuth helpers
 import { runOAuthFlow, loadToken } from "./oauth.js";
+import {
+  SHOPIFY_API_VERSION,
+  SHOPIFY_FILE_UPLOAD_MAX_BYTES,
+  SHOPIFY_FILE_UPLOAD_SESSION_TTL_MINUTES,
+  getPublicAppUrl,
+} from "./config.js";
+import { cleanupExpiredUploadSessions, getUploadSession, updateUploadSession } from "./files/uploadSessions.js";
+import { escapeHtml } from "./files/uploadUtils.js";
+import { uploadFileToShopify } from "./files/uploadPipeline.js";
 
 // Parse command line arguments
 const argv = minimist(process.argv.slice(2));
@@ -92,7 +110,7 @@ async function startServer(accessToken: string, domain: string): Promise<void> {
 
   // Create Shopify GraphQL client
   const shopifyClient = new GraphQLClient(
-    `https://${domain}/admin/api/2023-07/graphql.json`,
+    `https://${domain}/admin/api/${SHOPIFY_API_VERSION}/graphql.json`,
     {
       headers: {
         "X-Shopify-Access-Token": accessToken,
@@ -151,6 +169,16 @@ async function startServer(accessToken: string, domain: string): Promise<void> {
   getBulkOperationResults.initialize(shopifyClient);
   getStatus.initialize(shopifyClient);
   searchTaxonomy.initialize(shopifyClient);
+  getFileUploadSession.initialize(shopifyClient);
+  getFiles.initialize(shopifyClient);
+  attachFileToProduct.initialize(shopifyClient);
+  detachFileFromProduct.initialize(shopifyClient);
+
+  const publicAppUrl = getPublicAppUrl(PORT);
+  createFileUploadSession.initialize({
+    remoteMode: REMOTE_MODE,
+    publicAppUrl,
+  });
 
   // Function to create a new MCP server with all tools registered
   // This is called per-connection in remote mode, once in local mode
@@ -1674,6 +1702,108 @@ async function startServer(accessToken: string, domain: string): Promise<void> {
 
     // Taxonomy search tool
     server.tool(
+      "get-files",
+      {
+        query: z.string().optional().describe("Shopify file search query"),
+        limit: z.number().default(50).describe("Maximum files to return"),
+        cursor: z.string().optional().describe("Pagination cursor"),
+        sortKey: z
+          .enum([
+            "CREATED_AT",
+            "FILENAME",
+            "ID",
+            "ORIGINAL_UPLOAD_SIZE",
+            "RELEVANCE",
+            "UPDATED_AT",
+          ])
+          .default("UPDATED_AT")
+          .describe("Sort key for file results"),
+        reverse: z.boolean().default(true).describe("Reverse sort order"),
+      },
+      async (args) => {
+        const result = await getFiles.execute(args);
+        return {
+          content: [{ type: "text", text: JSON.stringify(result) }],
+        };
+      },
+    );
+
+    server.tool(
+      "attach-file-to-product",
+      {
+        fileId: z.string().min(1).describe("Shopify file GID"),
+        productId: z
+          .string()
+          .min(1)
+          .describe("Product ID (numeric or full GID)"),
+        waitUntilReady: z
+          .boolean()
+          .default(true)
+          .describe("Poll until the Shopify file is READY"),
+        waitTimeoutSeconds: z
+          .number()
+          .default(30)
+          .describe("Maximum time to wait for READY status"),
+      },
+      async (args) => {
+        const result = await attachFileToProduct.execute(args);
+        return {
+          content: [{ type: "text", text: JSON.stringify(result) }],
+        };
+      },
+    );
+
+    server.tool(
+      "detach-file-from-product",
+      {
+        fileId: z.string().min(1).describe("Shopify file GID"),
+        productId: z
+          .string()
+          .min(1)
+          .describe("Product ID (numeric or full GID)"),
+      },
+      async (args) => {
+        const result = await detachFileFromProduct.execute(args);
+        return {
+          content: [{ type: "text", text: JSON.stringify(result) }],
+        };
+      },
+    );
+
+    if (REMOTE_MODE) {
+      server.tool(
+        "create-file-upload-session",
+        {
+          kind: z.enum(["AUTO", "IMAGE", "FILE"]).default("AUTO"),
+          altText: z.string().optional(),
+          duplicateResolutionMode: z
+            .enum(["APPEND_UUID", "RAISE_ERROR", "REPLACE"])
+            .default("APPEND_UUID"),
+          expiresInMinutes: z.number().min(1).max(60).default(15),
+        },
+        async (args) => {
+          const result = await createFileUploadSession.execute(args);
+          return {
+            content: [{ type: "text", text: JSON.stringify(result) }],
+          };
+        },
+      );
+
+      server.tool(
+        "get-file-upload-session",
+        {
+          sessionId: z.string().min(1),
+        },
+        async (args) => {
+          const result = await getFileUploadSession.execute(args);
+          return {
+            content: [{ type: "text", text: JSON.stringify(result) }],
+          };
+        },
+      );
+    }
+
+    server.tool(
       "search-taxonomy",
       {
         search: z.string().optional().describe("Search term to find categories"),
@@ -1697,6 +1827,20 @@ async function startServer(accessToken: string, domain: string): Promise<void> {
   if (REMOTE_MODE) {
     // Remote mode: Express + SSE
     const app = express();
+    const uploadTmpDir = join(tmpdir(), "shopify-mcp-uploads");
+    mkdirSync(uploadTmpDir, { recursive: true });
+
+    const upload = multer({
+      dest: uploadTmpDir,
+      limits: {
+        fileSize: SHOPIFY_FILE_UPLOAD_MAX_BYTES,
+      },
+    });
+
+    const cleanupInterval = setInterval(() => {
+      cleanupExpiredUploadSessions();
+    }, 60_000);
+    cleanupInterval.unref();
 
     // CORS middleware
     app.use((req, res, next) => {
@@ -1706,6 +1850,56 @@ async function startServer(accessToken: string, domain: string): Promise<void> {
       if (req.method === "OPTIONS") return res.sendStatus(200);
       next();
     });
+
+    const wantsJson = (req: Request): boolean => {
+      if (req.query.format === "json") {
+        return true;
+      }
+
+      return req.accepts(["html", "json"]) === "json";
+    };
+
+    const renderPage = (title: string, body: string): string => `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>${escapeHtml(title)}</title>
+    <style>
+      body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; margin: 2rem; color: #111827; }
+      main { max-width: 42rem; margin: 0 auto; }
+      form { display: grid; gap: 1rem; margin-top: 1.5rem; }
+      input[type="file"] { padding: 0.5rem 0; }
+      button { background: #111827; border: 0; border-radius: 0.5rem; color: white; cursor: pointer; padding: 0.75rem 1rem; }
+      .meta { color: #4b5563; font-size: 0.95rem; }
+      .error { color: #991b1b; }
+      .success { color: #065f46; }
+      code { background: #f3f4f6; border-radius: 0.25rem; padding: 0.125rem 0.25rem; }
+      pre { background: #f3f4f6; border-radius: 0.5rem; overflow: auto; padding: 1rem; white-space: pre-wrap; }
+    </style>
+  </head>
+  <body>
+    <main>
+      ${body}
+    </main>
+  </body>
+</html>`;
+
+    const sendUploadResult = (
+      req: Request,
+      res: Response,
+      statusCode: number,
+      payload: Record<string, unknown>,
+      title: string,
+      bodyHtml: string,
+    ) => {
+      if (wantsJson(req)) {
+        res.status(statusCode).json(payload);
+        return;
+      }
+
+      res.status(statusCode).send(renderPage(title, bodyHtml));
+    };
 
     // Store active sessions: each connection gets its own server + transport
     const sessions = new Map<
@@ -1735,7 +1929,303 @@ async function startServer(accessToken: string, domain: string): Promise<void> {
 
     // Health check endpoint (no auth required)
     app.get("/health", (_req: Request, res: Response) => {
-      res.json({ status: "ok", mode: "remote", domain: domain });
+      res.json({
+        status: "ok",
+        mode: "remote",
+        domain: domain,
+        publicAppUrl,
+        apiVersion: SHOPIFY_API_VERSION,
+      });
+    });
+
+    app.get("/uploads/shopify-files/:sessionId", (req: Request, res: Response) => {
+      cleanupExpiredUploadSessions();
+
+      const session = getUploadSession(req.params.sessionId);
+      if (!session) {
+        sendUploadResult(
+          req,
+          res,
+          404,
+          { error: "Upload session not found." },
+          "Upload Session Not Found",
+          "<h1>Upload Session Not Found</h1><p class=\"error\">This upload link is invalid or has already been cleaned up.</p>",
+        );
+        return;
+      }
+
+      if (session.state === "EXPIRED") {
+        sendUploadResult(
+          req,
+          res,
+          410,
+          {
+            sessionId: session.id,
+            sessionState: session.state,
+            error: "Upload session expired.",
+          },
+          "Upload Session Expired",
+          `<h1>Upload Session Expired</h1><p class="error">This upload link expired at <code>${escapeHtml(
+            new Date(session.expiresAt).toISOString(),
+          )}</code>.</p>`,
+        );
+        return;
+      }
+
+      if (session.state === "COMPLETE") {
+        sendUploadResult(
+          req,
+          res,
+          200,
+          {
+            sessionId: session.id,
+            sessionState: session.state,
+            fileId: session.fileId,
+          },
+          "Upload Complete",
+          `<h1>Upload Complete</h1><p class="success">This session already uploaded a file to Shopify.</p><p class="meta">Session ID: <code>${escapeHtml(
+            session.id,
+          )}</code></p><p class="meta">Use <code>get-file-upload-session</code> in MCP to inspect the uploaded file.</p>`,
+        );
+        return;
+      }
+
+      const errorHtml =
+        session.state === "FAILED" && session.error
+          ? `<p class="error">Previous upload failed: ${escapeHtml(
+              session.error,
+            )}</p>`
+          : "";
+
+      sendUploadResult(
+        req,
+        res,
+        200,
+        {
+          sessionId: session.id,
+          sessionState: session.state,
+          uploadUrl: session.uploadUrl,
+          expiresAt: new Date(session.expiresAt).toISOString(),
+        },
+        "Upload File to Shopify",
+        `<h1>Upload File to Shopify</h1>
+         <p class="meta">This browser form uploads one file into Shopify Files.</p>
+         <p class="meta">Requested kind: <code>${escapeHtml(session.kind)}</code></p>
+         <p class="meta">Expires at: <code>${escapeHtml(
+           new Date(session.expiresAt).toISOString(),
+         )}</code></p>
+         ${
+           session.altText
+             ? `<p class="meta">Alt text: <code>${escapeHtml(session.altText)}</code></p>`
+             : ""
+         }
+         ${errorHtml}
+         <form method="post" enctype="multipart/form-data">
+           <label>
+             <span>Choose file</span><br />
+             <input type="file" name="file" required />
+           </label>
+           <button type="submit">Upload to Shopify</button>
+         </form>`,
+      );
+    });
+
+    app.post("/uploads/shopify-files/:sessionId", (req: Request, res: Response) => {
+      upload.single("file")(req, res, (uploadError) => {
+        void (async () => {
+          cleanupExpiredUploadSessions();
+
+          const session = getUploadSession(req.params.sessionId);
+          if (!session) {
+            sendUploadResult(
+              req,
+              res,
+              404,
+              { error: "Upload session not found." },
+              "Upload Session Not Found",
+              "<h1>Upload Session Not Found</h1><p class=\"error\">This upload link is invalid or has already been cleaned up.</p>",
+            );
+            return;
+          }
+
+          if (session.state === "EXPIRED") {
+            sendUploadResult(
+              req,
+              res,
+              410,
+              {
+                sessionId: session.id,
+                sessionState: session.state,
+                error: "Upload session expired.",
+              },
+              "Upload Session Expired",
+              "<h1>Upload Session Expired</h1><p class=\"error\">This upload link can no longer accept files.</p>",
+            );
+            return;
+          }
+
+          if (session.state === "UPLOADING") {
+            sendUploadResult(
+              req,
+              res,
+              409,
+              {
+                sessionId: session.id,
+                sessionState: session.state,
+                error: "Upload already in progress.",
+              },
+              "Upload In Progress",
+              "<h1>Upload In Progress</h1><p class=\"error\">This session is already uploading a file.</p>",
+            );
+            return;
+          }
+
+          if (session.state === "COMPLETE") {
+            sendUploadResult(
+              req,
+              res,
+              409,
+              {
+                sessionId: session.id,
+                sessionState: session.state,
+                error: "Upload session already completed.",
+              },
+              "Upload Already Complete",
+              "<h1>Upload Already Complete</h1><p class=\"error\">This session already uploaded a file.</p>",
+            );
+            return;
+          }
+
+          if (uploadError) {
+            const errorMessage =
+              uploadError instanceof multer.MulterError &&
+              uploadError.code === "LIMIT_FILE_SIZE"
+                ? `File exceeds the maximum allowed size of ${SHOPIFY_FILE_UPLOAD_MAX_BYTES} bytes.`
+                : uploadError instanceof Error
+                  ? uploadError.message
+                  : String(uploadError);
+
+            updateUploadSession(session.id, {
+              state: "FAILED",
+              error: errorMessage,
+            });
+
+            sendUploadResult(
+              req,
+              res,
+              400,
+              {
+                sessionId: session.id,
+                sessionState: "FAILED",
+                error: errorMessage,
+              },
+              "Upload Failed",
+              `<h1>Upload Failed</h1><p class="error">${escapeHtml(
+                errorMessage,
+              )}</p>`,
+            );
+            return;
+          }
+
+          const uploadedFile = req.file;
+          if (!uploadedFile) {
+            sendUploadResult(
+              req,
+              res,
+              400,
+              {
+                sessionId: session.id,
+                sessionState: session.state,
+                error: "No file was provided.",
+              },
+              "No File Provided",
+              "<h1>No File Provided</h1><p class=\"error\">Choose a file before submitting the form.</p>",
+            );
+            return;
+          }
+
+          updateUploadSession(session.id, {
+            state: "UPLOADING",
+            error: undefined,
+          });
+
+          try {
+            const createdFile = await uploadFileToShopify({
+              shopifyClient,
+              filePath: uploadedFile.path,
+              filename: uploadedFile.originalname,
+              mimeType: uploadedFile.mimetype || "application/octet-stream",
+              requestedKind: session.kind,
+              altText: session.altText,
+              duplicateResolutionMode: session.duplicateResolutionMode,
+            });
+
+            updateUploadSession(session.id, {
+              state: "COMPLETE",
+              fileId: createdFile.id,
+              error: undefined,
+            });
+
+            sendUploadResult(
+              req,
+              res,
+              200,
+              {
+                sessionId: session.id,
+                sessionState: "COMPLETE",
+                file: createdFile,
+              },
+              "Upload Complete",
+              `<h1>Upload Complete</h1>
+               <p class="success">Your file was uploaded to Shopify Files.</p>
+               <p class="meta">File ID: <code>${escapeHtml(
+                 createdFile.id,
+               )}</code></p>
+               <p class="meta">File status: <code>${escapeHtml(
+                 createdFile.fileStatus ?? "unknown",
+               )}</code></p>
+               <p class="meta">Use <code>get-file-upload-session</code> or <code>get-files</code> in MCP to inspect the uploaded file.</p>`,
+            );
+          } catch (error) {
+            const errorMessage =
+              error instanceof Error ? error.message : String(error);
+
+            updateUploadSession(session.id, {
+              state: "FAILED",
+              error: errorMessage,
+            });
+
+            sendUploadResult(
+              req,
+              res,
+              500,
+              {
+                sessionId: session.id,
+                sessionState: "FAILED",
+                error: errorMessage,
+              },
+              "Upload Failed",
+              `<h1>Upload Failed</h1><p class="error">${escapeHtml(
+                errorMessage,
+              )}</p>`,
+            );
+          }
+        })().catch((error) => {
+          const errorMessage =
+            error instanceof Error ? error.message : String(error);
+
+          sendUploadResult(
+            req,
+            res,
+            500,
+            { error: errorMessage },
+            "Upload Failed",
+            `<h1>Upload Failed</h1><p class="error">${escapeHtml(
+              errorMessage,
+            )}</p>`,
+          );
+        });
+      });
     });
 
     // MCP endpoint - client connects here for server-sent events
@@ -1792,6 +2282,7 @@ async function startServer(accessToken: string, domain: string): Promise<void> {
       console.error(`Shopify MCP Server running in REMOTE mode`);
       console.error(`  Health: http://localhost:${PORT}/health`);
       console.error(`  MCP:    http://localhost:${PORT}/mcp`);
+      console.error(`  Public: ${publicAppUrl}`);
       console.error(`  Store:  ${domain}`);
     });
   } else {

@@ -2,6 +2,8 @@ import type { GraphQLClient } from "graphql-request";
 import { gql } from "graphql-request";
 import { z } from "zod";
 
+import { SHOPIFY_API_VERSION } from "../config.js";
+
 const GetStatusInputSchema = z.object({});
 
 let shopifyClient: GraphQLClient;
@@ -90,7 +92,7 @@ const getStatus = {
         },
         server: {
           mode: process.env.REMOTE_MCP === "true" ? "remote" : "local",
-          apiVersion: "2023-07",
+          apiVersion: SHOPIFY_API_VERSION,
           configuredDomain: process.env.MYSHOPIFY_DOMAIN || "not set"
         },
         scopes: {
@@ -106,7 +108,7 @@ const getStatus = {
         error: error instanceof Error ? error.message : String(error),
         server: {
           mode: process.env.REMOTE_MCP === "true" ? "remote" : "local",
-          apiVersion: "2023-07",
+          apiVersion: SHOPIFY_API_VERSION,
           configuredDomain: process.env.MYSHOPIFY_DOMAIN || "not set"
         }
       };
