@@ -100,6 +100,21 @@ const RUN_OAUTH = argv.oauth === true;
 const REMOTE_MODE = argv.remote === true || process.env.REMOTE_MCP === "true";
 const PORT = parseInt(process.env.PORT || "3000", 10);
 
+type UploadedFile = {
+  path: string;
+  originalname: string;
+  mimetype?: string;
+};
+
+function isMulterLimitError(error: unknown): error is { code: string } {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    typeof error.code === "string"
+  );
+}
+
 /**
  * Start the MCP server with the given access token
  */
@@ -2100,7 +2115,7 @@ async function startServer(accessToken: string, domain: string): Promise<void> {
 
           if (uploadError) {
             const errorMessage =
-              uploadError instanceof multer.MulterError &&
+              isMulterLimitError(uploadError) &&
               uploadError.code === "LIMIT_FILE_SIZE"
                 ? `File exceeds the maximum allowed size of ${SHOPIFY_FILE_UPLOAD_MAX_BYTES} bytes.`
                 : uploadError instanceof Error
@@ -2129,7 +2144,7 @@ async function startServer(accessToken: string, domain: string): Promise<void> {
             return;
           }
 
-          const uploadedFile = (req as Request & { file?: Express.Multer.File }).file;
+          const uploadedFile = (req as Request & { file?: UploadedFile }).file;
           if (!uploadedFile) {
             sendUploadResult(
               req,
