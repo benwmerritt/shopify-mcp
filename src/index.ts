@@ -44,6 +44,8 @@ import { setMetafield } from "./tools/setMetafield.js";
 import { createMetaobject } from "./tools/createMetaobject.js";
 import { listMetaobjects } from "./tools/listMetaobjects.js";
 import { getMetaobject } from "./tools/getMetaobject.js";
+import { listMetaobjectDefinitions } from "./tools/listMetaobjectDefinitions.js";
+import { getMetaobjectDefinition } from "./tools/getMetaobjectDefinition.js";
 import { getLocations } from "./tools/getLocations.js";
 import { getDraftOrders } from "./tools/getDraftOrders.js";
 import { getDraftOrderById } from "./tools/getDraftOrderById.js";
@@ -131,6 +133,8 @@ async function startServer(accessToken: string, domain: string): Promise<void> {
   createMetaobject.initialize(shopifyClient);
   listMetaobjects.initialize(shopifyClient);
   getMetaobject.initialize(shopifyClient);
+  listMetaobjectDefinitions.initialize(shopifyClient);
+  getMetaobjectDefinition.initialize(shopifyClient);
   getLocations.initialize(shopifyClient);
   getDraftOrders.initialize(shopifyClient);
   getDraftOrderById.initialize(shopifyClient);
@@ -1066,6 +1070,48 @@ async function startServer(accessToken: string, domain: string): Promise<void> {
     );
 
     // ==================== METAOBJECT TOOLS ====================
+
+    // List metaobject definitions
+    server.tool(
+      "list-metaobject-definitions",
+      {
+        limit: z
+          .number()
+          .default(25)
+          .describe(
+            "Maximum number of metaobject definitions to return (max 250)",
+          ),
+        cursor: z
+          .string()
+          .optional()
+          .describe("Pagination cursor for fetching the next page"),
+      },
+      async (args) => {
+        const result = await listMetaobjectDefinitions.execute(args);
+        return {
+          content: [{ type: "text", text: JSON.stringify(result) }],
+        };
+      },
+    );
+
+    // Get metaobject definition by type
+    server.tool(
+      "get-metaobject-definition",
+      {
+        type: z
+          .string()
+          .min(1)
+          .describe(
+            "Metaobject definition type to inspect (for example 'size_chart')",
+          ),
+      },
+      async (args) => {
+        const result = await getMetaobjectDefinition.execute(args);
+        return {
+          content: [{ type: "text", text: JSON.stringify(result) }],
+        };
+      },
+    );
 
     // Create metaobject entry
     server.tool(

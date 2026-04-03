@@ -184,6 +184,8 @@ MYSHOPIFY_DOMAIN=your-store.myshopify.com
 - `delete-metafield`
 
 ### Metaobjects
+- `list-metaobject-definitions`
+- `get-metaobject-definition`
 - `create-metaobject`
 - `list-metaobjects`
 - `get-metaobject`
