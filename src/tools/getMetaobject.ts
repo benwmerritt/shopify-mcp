@@ -37,7 +37,6 @@ const getMetaobject = {
               type
               handle
               displayName
-              createdAt
               updatedAt
               fields {
                 key
@@ -58,7 +57,6 @@ const getMetaobject = {
               type: string;
               handle: string;
               displayName: string | null;
-              createdAt: string;
               updatedAt: string;
               fields: Array<{
                 key: string;
@@ -79,7 +77,6 @@ const getMetaobject = {
           type: data.node.type,
           handle: data.node.handle,
           displayName: data.node.displayName,
-          createdAt: data.node.createdAt,
           updatedAt: data.node.updatedAt,
           fields: data.node.fields.map((field) => ({
             key: field.key,

@@ -57,7 +57,6 @@ const createMetaobject = {
               type
               handle
               displayName
-              createdAt
               updatedAt
               fields {
                 key
@@ -96,7 +95,6 @@ const createMetaobject = {
             type: string;
             handle: string;
             displayName: string | null;
-            createdAt: string;
             updatedAt: string;
             fields: MetaobjectField[];
           } | null;
@@ -133,7 +131,6 @@ const createMetaobject = {
           type: metaobject.type,
           handle: metaobject.handle,
           displayName: metaobject.displayName,
-          createdAt: metaobject.createdAt,
           updatedAt: metaobject.updatedAt,
           fields: formatFields(metaobject.fields)
         }
