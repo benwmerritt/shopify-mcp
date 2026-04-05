@@ -71,7 +71,10 @@ const listMetafieldDefinitions = {
                   type
                   value
                 }
-                visibleToStorefrontApi
+                access {
+                  admin
+                  storefront
+                }
               }
             }
             pageInfo {
@@ -107,7 +110,10 @@ const listMetafieldDefinitions = {
                 type: string;
                 value: string;
               }>;
-              visibleToStorefrontApi: boolean;
+              access: {
+                admin: string;
+                storefront: string;
+              };
             };
           }>;
           pageInfo: {
@@ -129,7 +135,7 @@ const listMetafieldDefinitions = {
           ownerType: edge.node.ownerType,
           pinnedPosition: edge.node.pinnedPosition,
           validations: edge.node.validations,
-          visibleToStorefrontApi: edge.node.visibleToStorefrontApi,
+          access: edge.node.access,
         })),
         pageInfo: {
           hasNextPage: data.metafieldDefinitions.pageInfo.hasNextPage,
