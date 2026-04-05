@@ -45,6 +45,7 @@ import { updateInventory } from "./tools/updateInventory.js";
 import { getMetafields } from "./tools/getMetafields.js";
 import { deleteMetafield } from "./tools/deleteMetafield.js";
 import { setMetafield } from "./tools/setMetafield.js";
+import { listMetafieldDefinitions } from "./tools/listMetafieldDefinitions.js";
 import { createMetaobject } from "./tools/createMetaobject.js";
 import { listMetaobjects } from "./tools/listMetaobjects.js";
 import { getMetaobject } from "./tools/getMetaobject.js";
@@ -163,6 +164,7 @@ async function startServer(accessToken: string, domain: string): Promise<void> {
   getMetafields.initialize(shopifyClient);
   deleteMetafield.initialize(shopifyClient);
   setMetafield.initialize(shopifyClient);
+  listMetafieldDefinitions.initialize(shopifyClient);
   createMetaobject.initialize(shopifyClient);
   listMetaobjects.initialize(shopifyClient);
   getMetaobject.initialize(shopifyClient);
@@ -1108,6 +1110,37 @@ async function startServer(accessToken: string, domain: string): Promise<void> {
       },
       async (args) => {
         const result = await setMetafield.execute(args);
+        return {
+          content: [{ type: "text", text: JSON.stringify(result) }],
+        };
+      },
+    );
+
+    // List metafield definitions
+    server.tool(
+      "list-metafield-definitions",
+      {
+        ownerType: z
+          .enum([
+            "PRODUCT",
+            "PRODUCTVARIANT",
+            "CUSTOMER",
+            "ORDER",
+            "COLLECTION",
+            "SHOP",
+          ])
+          .describe("Type of resource to list metafield definitions for"),
+        limit: z
+          .number()
+          .default(25)
+          .describe("Maximum number of definitions to return (max 250)"),
+        cursor: z
+          .string()
+          .optional()
+          .describe("Pagination cursor for fetching the next page"),
+      },
+      async (args) => {
+        const result = await listMetafieldDefinitions.execute(args);
         return {
           content: [{ type: "text", text: JSON.stringify(result) }],
         };
