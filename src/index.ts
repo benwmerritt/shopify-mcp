@@ -61,6 +61,7 @@ import { getRedirects } from "./tools/getRedirects.js";
 import { createRedirect } from "./tools/createRedirect.js";
 import { deleteRedirect } from "./tools/deleteRedirect.js";
 import { getStoreCounts } from "./tools/getStoreCounts.js";
+import { countProductsByTag } from "./tools/countProductsByTag.js";
 import { getProductIssues } from "./tools/getProductIssues.js";
 import { startBulkExport } from "./tools/startBulkExport.js";
 import { getBulkOperationStatus } from "./tools/getBulkOperationStatus.js";
@@ -180,6 +181,7 @@ async function startServer(accessToken: string, domain: string): Promise<void> {
   createRedirect.initialize(shopifyClient);
   deleteRedirect.initialize(shopifyClient);
   getStoreCounts.initialize(shopifyClient);
+  countProductsByTag.initialize(shopifyClient);
   getProductIssues.initialize(shopifyClient);
   startBulkExport.initialize(shopifyClient);
   getBulkOperationStatus.initialize(shopifyClient);
@@ -1617,6 +1619,20 @@ async function startServer(accessToken: string, domain: string): Promise<void> {
         content: [{ type: "text", text: JSON.stringify(result) }],
       };
     });
+
+    // Count products by tag
+    server.tool(
+      "count-products-by-tag",
+      {
+        tag: z.string().describe("Tag name to count (e.g. 'wiki-researched')"),
+      },
+      async (args) => {
+        const result = await countProductsByTag.execute(args);
+        return {
+          content: [{ type: "text", text: JSON.stringify(result) }],
+        };
+      },
+    );
 
     // Get product issues (audit tool)
     server.tool(

@@ -51,7 +51,7 @@ function escapeWildcardSearch(value: string): string {
 // Input schema for getProducts
 const GetProductsInputSchema = z.object({
   searchTitle: z.string().optional(),
-  limit: z.number().default(10),
+  limit: z.number().default(10).describe("Maximum number of products to return (max 100)"),
   fields: z.union([
     z.enum(["slim", "standard", "full"]),
     z.array(z.string())
@@ -135,7 +135,7 @@ const getProducts = {
       `;
 
       const variables = {
-        first: limit,
+        first: Math.min(limit, 100),
         query: searchTitle ? `title:*${escapeWildcardSearch(searchTitle)}*` : undefined
       };
 
