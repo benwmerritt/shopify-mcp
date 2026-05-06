@@ -30,6 +30,36 @@ A Model Context Protocol (MCP) server that connects agents to the Shopify Admin 
 - Node.js 18+
 - A Shopify custom app (OAuth or Admin API token)
 
+## Local setup (this repo)
+
+Use this when you want to run the MCP server from this local checkout instead of a remote deployment.
+
+1. Install dependencies and build:
+
+```bash
+npm install
+npm run build
+```
+
+2. Create local env config:
+
+```bash
+cp .env.example .env
+```
+
+Set at least:
+- `MYSHOPIFY_DOMAIN=your-store.myshopify.com`
+- `SHOPIFY_ACCESS_TOKEN=shpat_xxx`
+- `REMOTE_MCP=false`
+
+3. Start local MCP (stdio):
+
+```bash
+npm run start:local
+```
+
+`start:local` uses stdio mode. Remote mode is only enabled with `--remote` or `REMOTE_MCP=true`.
+
 ## Install + run
 
 ### OAuth flow (recommended)
@@ -73,7 +103,32 @@ shopify-mcp --accessToken=<YOUR_ACCESS_TOKEN> --domain=<YOUR_SHOP>.myshopify.com
 
 ## MCP client setup
 
-### Claude Desktop
+### Claude Desktop (local repo build)
+
+Build first (`npm run build`), then point Claude Desktop at this repo's built entrypoint:
+
+```json
+{
+  "mcpServers": {
+    "shopify-local": {
+      "command": "node",
+      "args": [
+        "/absolute/path/to/shopify-mcp/dist/index.js",
+        "--domain",
+        "your-store.myshopify.com"
+      ],
+      "env": {
+        "SHOPIFY_ACCESS_TOKEN": "shpat_xxx",
+        "REMOTE_MCP": "false"
+      }
+    }
+  }
+}
+```
+
+If you completed OAuth locally, remove `SHOPIFY_ACCESS_TOKEN` and keep `--domain`.
+
+### Claude Desktop (npm package)
 
 ```json
 {
