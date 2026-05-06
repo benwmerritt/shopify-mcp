@@ -93,7 +93,7 @@ const SearchProductsInputSchema = z.object({
   hasImages: z.boolean().optional().describe("Filter products that have (true) or don't have (false) images"),
   
   // Pagination
-  limit: z.number().default(50).describe("Maximum number of products to return (max 250)"),
+  limit: z.number().default(50).describe("Maximum number of products to return (max 100)"),
   cursor: z.string().optional().describe("Pagination cursor for fetching next page"),
 
   // Response fields control
@@ -237,7 +237,7 @@ const searchProducts = {
       `;
 
       const variables = {
-        first: Math.min(input.limit, 250),
+        first: Math.min(input.limit, 100),
         query: queryString,
         after: input.cursor
       };

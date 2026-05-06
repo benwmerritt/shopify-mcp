@@ -21,6 +21,7 @@ A Model Context Protocol (MCP) server that connects agents to the Shopify Admin 
 - Draft orders for quotes, manual orders, and B2B pricing
 - Inventory and location lookups for stock workflows
 - Metafields for custom data
+- Metaobject entry creation and lookup for existing definitions
 - URL redirects management
 - OAuth login flow with local token caching
 - Bulk product cleanup utilities
@@ -236,6 +237,13 @@ MYSHOPIFY_DOMAIN=your-store.myshopify.com
 - `get-metafields`
 - `set-metafield` (create or update)
 - `delete-metafield`
+
+### Metaobjects
+- `list-metaobject-definitions`
+- `get-metaobject-definition`
+- `create-metaobject`
+- `list-metaobjects`
+- `get-metaobject`
 
 ### URL redirects
 - `get-redirects`

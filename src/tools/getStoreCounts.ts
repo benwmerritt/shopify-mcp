@@ -42,8 +42,8 @@ const getStoreCounts = {
             precision
           }
 
-          # Variant count (no limit arg supported)
-          variantsTotal: productVariantsCount {
+          # Variant count
+          variantsTotal: productVariantsCount(limit: null) {
             count
             precision
           }
@@ -62,22 +62,22 @@ const getStoreCounts = {
             precision
           }
 
-          # Customer count (no limit arg supported)
-          customersTotal: customersCount {
+          # Customer count
+          customersTotal: customersCount(limit: null) {
             count
             precision
           }
 
-          # Collection counts (no limit arg supported)
-          collectionsTotal: collectionsCount {
+          # Collection counts
+          collectionsTotal: collectionsCount(limit: null) {
             count
             precision
           }
-          collectionsSmart: collectionsCount(query: "collection_type:smart") {
+          collectionsSmart: collectionsCount(limit: null, query: "collection_type:smart") {
             count
             precision
           }
-          collectionsCustom: collectionsCount(query: "collection_type:custom") {
+          collectionsCustom: collectionsCount(limit: null, query: "collection_type:custom") {
             count
             precision
           }
