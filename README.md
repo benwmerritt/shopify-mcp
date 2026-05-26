@@ -156,26 +156,48 @@ Config paths:
 
 ### Remote MCP (Railway, etc.)
 
-Deploy as a remote MCP server for use with Claude.ai or other remote clients.
+By default this server runs as a local stdio MCP. Passing `--remote` (or setting
+`REMOTE_MCP=true`) switches it to HTTP/SSE mode so it can be deployed as a remote
+MCP server for Claude.ai or other remote clients. This repo ships a `Dockerfile`
+and `railway.json` so Railway builds and starts it in remote mode out of the box.
 
-**1. Get token locally (one-time):**
+**1. Get a token locally (one-time):**
 ```bash
 npx shopify-mcp --oauth --domain=your-store.myshopify.com --clientId=xxx --clientSecret=yyy
 # Token saved to ~/.shopify-mcp/tokens.json
 ```
 
-**2. Set environment variables on your hosting platform:**
+**2. Deploy to Railway:**
+- Create a project from this repo. Railway reads `railway.json` and builds the
+  `Dockerfile`, which starts the server with `--remote`.
+- Set the service environment variables (Railway injects `PORT` automatically):
+
 ```bash
-REMOTE_MCP=true
-SHOPIFY_ACCESS_TOKEN=shpat_xxx   # From tokens.json
+SHOPIFY_ACCESS_TOKEN=shpat_xxx           # from tokens.json (or use the OAuth vars)
 MYSHOPIFY_DOMAIN=your-store.myshopify.com
-PORT=3000                         # Optional, defaults to 3000
+MCP_API_KEY=choose-a-long-random-string  # required to authenticate remote clients
+# REMOTE_MCP=true is already implied by the Dockerfile's --remote flag
+# PORT is injected by Railway (defaults to 3000 when run locally)
 ```
 
-**3. Deploy and connect:**
+**3. Connect:**
 - Health check: `GET /health`
-- MCP endpoint: `GET /mcp?apiKey=xxx`
-- Messages: `POST /messages?apiKey=xxx`
+- MCP endpoint (SSE): `GET /mcp?apiKey=<MCP_API_KEY>`
+- Messages: `POST /messages?apiKey=<MCP_API_KEY>`
+
+Auth uses the `apiKey` **query parameter**; requests without a matching
+`MCP_API_KEY` receive `401`.
+
+**Test the container locally before deploying:**
+```bash
+docker build -t shopify-mcp .
+docker run -p 3000:3000 \
+  -e MYSHOPIFY_DOMAIN=your-store.myshopify.com \
+  -e SHOPIFY_ACCESS_TOKEN=shpat_xxx \
+  -e MCP_API_KEY=test \
+  shopify-mcp
+# then in another shell: curl localhost:3000/health
+```
 
 ### Environment variables (optional)
 
@@ -191,16 +213,16 @@ MYSHOPIFY_DOMAIN=your-store.myshopify.com
 ## Tool catalog
 
 ### Products
-- `get-products` (supports `fields`: `slim | standard | full | []`)
-- `get-product-by-id`
+- `products` — unified lookup/search/filter. Pass `id` for a single product; omit `id` to list/search with filters (`title`, `status`, `vendor`, `tag`, inventory, dates, `hasImages`, …). Supports `fields`: `slim | standard | full | []`. Page size capped at 100.
 - `create-product`
 - `update-product`
 - `delete-product`
 - `delete-variant`
 - `delete-product-images`
-- `search-products` (supports `fields`)
 - `bulk-update-products`
 - `bulk-delete-products`
+- `count-products-by-tag`
+- `search-taxonomy` — browse Shopify's product category taxonomy
 
 ### Collections
 - `get-collections`
@@ -212,16 +234,13 @@ MYSHOPIFY_DOMAIN=your-store.myshopify.com
 ### Customers
 - `get-customers` (supports pagination via `cursor`)
 - `update-customer`
-- `get-customer-orders` (supports pagination via `cursor`)
 
 ### Orders
-- `get-orders` (supports pagination via `cursor`)
-- `get-order-by-id`
+- `orders` — unified lookup/list. Pass `id` for a single order; omit `id` to list with filters (`customerId`, `status`, pagination via `cursor`). Replaces `get-orders`, `get-order-by-id`, and `get-customer-orders`.
 - `update-order`
 
 ### Draft Orders
-- `get-draft-orders` (supports pagination via `cursor`)
-- `get-draft-order-by-id`
+- `draft-orders` — unified lookup/list. Pass `id` for a single draft order; omit `id` to list with filters (`status`, `query`, pagination via `cursor`).
 - `create-draft-order`
 - `update-draft-order`
 - `complete-draft-order`
@@ -237,6 +256,7 @@ MYSHOPIFY_DOMAIN=your-store.myshopify.com
 - `get-metafields`
 - `set-metafield` (create or update)
 - `delete-metafield`
+- `list-metafield-definitions` — discover metafield definitions for an owner type (PRODUCT, ORDER, CUSTOMER, …)
 
 ### Metaobjects
 - `list-metaobject-definitions`
@@ -244,6 +264,13 @@ MYSHOPIFY_DOMAIN=your-store.myshopify.com
 - `create-metaobject`
 - `list-metaobjects`
 - `get-metaobject`
+
+### Files
+- `get-files` — list/search files in the store
+- `attach-file-to-product` — attach an existing media file to a product
+- `detach-file-from-product` — remove a media file from a product
+- `create-file-upload-session` — start a browser upload session (**remote mode only**)
+- `get-file-upload-session` — check an upload session (**remote mode only**)
 
 ### URL redirects
 - `get-redirects`
@@ -258,6 +285,9 @@ MYSHOPIFY_DOMAIN=your-store.myshopify.com
 - `start-bulk-export` - Start async bulk export (products, orders, customers, inventory, or custom query)
 - `get-bulk-operation-status` - Check progress of bulk operation
 - `get-bulk-operation-results` - Download and parse completed results (summary, sample, or full)
+
+### Server
+- `get-status` - Report MCP server status, configured store, and connection health
 
 ## Debugging
 
