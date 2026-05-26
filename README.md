@@ -21,6 +21,7 @@ A Model Context Protocol (MCP) server that connects agents to the Shopify Admin 
 - Draft orders for quotes, manual orders, and B2B pricing
 - Inventory and location lookups for stock workflows
 - Metafields for custom data
+- Metaobject entry creation and lookup for existing definitions
 - URL redirects management
 - OAuth login flow with local token caching
 - Bulk product cleanup utilities
@@ -29,6 +30,36 @@ A Model Context Protocol (MCP) server that connects agents to the Shopify Admin 
 
 - Node.js 18+
 - A Shopify custom app (OAuth or Admin API token)
+
+## Local setup (this repo)
+
+Use this when you want to run the MCP server from this local checkout instead of a remote deployment.
+
+1. Install dependencies and build:
+
+```bash
+npm install
+npm run build
+```
+
+2. Create local env config:
+
+```bash
+cp .env.example .env
+```
+
+Set at least:
+- `MYSHOPIFY_DOMAIN=your-store.myshopify.com`
+- `SHOPIFY_ACCESS_TOKEN=shpat_xxx`
+- `REMOTE_MCP=false`
+
+3. Start local MCP (stdio):
+
+```bash
+npm run start:local
+```
+
+`start:local` uses stdio mode. Remote mode is only enabled with `--remote` or `REMOTE_MCP=true`.
 
 ## Install + run
 
@@ -73,7 +104,32 @@ shopify-mcp --accessToken=<YOUR_ACCESS_TOKEN> --domain=<YOUR_SHOP>.myshopify.com
 
 ## MCP client setup
 
-### Claude Desktop
+### Claude Desktop (local repo build)
+
+Build first (`npm run build`), then point Claude Desktop at this repo's built entrypoint:
+
+```json
+{
+  "mcpServers": {
+    "shopify-local": {
+      "command": "node",
+      "args": [
+        "/absolute/path/to/shopify-mcp/dist/index.js",
+        "--domain",
+        "your-store.myshopify.com"
+      ],
+      "env": {
+        "SHOPIFY_ACCESS_TOKEN": "shpat_xxx",
+        "REMOTE_MCP": "false"
+      }
+    }
+  }
+}
+```
+
+If you completed OAuth locally, remove `SHOPIFY_ACCESS_TOKEN` and keep `--domain`.
+
+### Claude Desktop (npm package)
 
 ```json
 {
@@ -97,6 +153,29 @@ If you completed OAuth, omit `--accessToken` and keep `--domain`.
 Config paths:
 - macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`
 - Windows: `%APPDATA%/Claude/claude_desktop_config.json`
+
+### Remote MCP (Railway, etc.)
+
+Deploy as a remote MCP server for use with Claude.ai or other remote clients.
+
+**1. Get token locally (one-time):**
+```bash
+npx shopify-mcp --oauth --domain=your-store.myshopify.com --clientId=xxx --clientSecret=yyy
+# Token saved to ~/.shopify-mcp/tokens.json
+```
+
+**2. Set environment variables on your hosting platform:**
+```bash
+REMOTE_MCP=true
+SHOPIFY_ACCESS_TOKEN=shpat_xxx   # From tokens.json
+MYSHOPIFY_DOMAIN=your-store.myshopify.com
+PORT=3000                         # Optional, defaults to 3000
+```
+
+**3. Deploy and connect:**
+- Health check: `GET /health`
+- MCP endpoint: `GET /mcp?apiKey=xxx`
+- Messages: `POST /messages?apiKey=xxx`
 
 ### Environment variables (optional)
 
@@ -158,6 +237,13 @@ MYSHOPIFY_DOMAIN=your-store.myshopify.com
 - `get-metafields`
 - `set-metafield` (create or update)
 - `delete-metafield`
+
+### Metaobjects
+- `list-metaobject-definitions`
+- `get-metaobject-definition`
+- `create-metaobject`
+- `list-metaobjects`
+- `get-metaobject`
 
 ### URL redirects
 - `get-redirects`

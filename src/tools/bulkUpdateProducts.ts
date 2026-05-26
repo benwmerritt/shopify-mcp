@@ -5,12 +5,13 @@ import { z } from "zod";
 // Input schema for bulk product updates
 const BulkUpdateProductsInputSchema = z.object({
   productIds: z.array(z.string().min(1)).min(1).max(100).describe("Array of product IDs to update (max 100)"),
-  
+
   // Fields to update on all products
   update: z.object({
     status: z.enum(["ACTIVE", "DRAFT", "ARCHIVED"]).optional(),
     vendor: z.string().optional(),
-    productType: z.string().optional(),
+    productType: z.string().optional().describe("Product type (e.g., 'Carburetor', 'Filter'). Use empty string to clear."),
+    category: z.string().optional().describe("Taxonomy category GID (e.g., 'gid://shopify/TaxonomyCategory/sg-4-17-2-17')"),
     tags: z.array(z.string()).optional().describe("Replace all tags with these"),
     addTags: z.array(z.string()).optional().describe("Add these tags (keeps existing)"),
     removeTags: z.array(z.string()).optional().describe("Remove these specific tags")
@@ -32,7 +33,7 @@ function normalizeProductId(id: string): string {
 
 const bulkUpdateProducts = {
   name: "bulk-update-products",
-  description: "Update multiple products at once. Supports updating status, vendor, productType, and tags (add/remove/replace).",
+  description: "Update multiple products at once. Supports updating status, vendor, productType, category, and tags (add/remove/replace).",
   schema: BulkUpdateProductsInputSchema,
 
   initialize(client: GraphQLClient) {
@@ -95,10 +96,10 @@ const bulkUpdateProducts = {
           }
         }
 
-        // Build update mutation
+        // Build update mutation using productSet (supports productType and category)
         const updateQuery = gql`
-          mutation productUpdate($input: ProductInput!) {
-            productUpdate(input: $input) {
+          mutation productSet($input: ProductSetInput!) {
+            productSet(input: $input) {
               product {
                 id
                 title
@@ -106,6 +107,11 @@ const bulkUpdateProducts = {
                 vendor
                 productType
                 tags
+                category {
+                  id
+                  name
+                  fullName
+                }
               }
               userErrors {
                 field
@@ -121,27 +127,36 @@ const bulkUpdateProducts = {
 
         if (input.update.status) updateInput.status = input.update.status;
         if (input.update.vendor) updateInput.vendor = input.update.vendor;
-        if (input.update.productType) updateInput.productType = input.update.productType;
+        if (input.update.productType !== undefined) updateInput.productType = input.update.productType;
+        if (input.update.category) updateInput.category = input.update.category;
         if (finalTags) updateInput.tags = finalTags;
 
         const updateData = (await shopifyClient.request(updateQuery, { input: updateInput })) as {
-          productUpdate: {
-            product: { id: string; title: string; status: string; vendor: string; productType: string; tags: string[] } | null;
-            userErrors: Array<{ field: string; message: string }>;
+          productSet: {
+            product: {
+              id: string;
+              title: string;
+              status: string;
+              vendor: string;
+              productType: string;
+              tags: string[];
+              category: { id: string; name: string; fullName: string } | null;
+            } | null;
+            userErrors: Array<{ field: string[]; message: string }>;
           };
         };
 
-        if (updateData.productUpdate.userErrors.length > 0) {
+        if (updateData.productSet.userErrors.length > 0) {
           results.push({
             productId: normalizedId,
             success: false,
-            error: updateData.productUpdate.userErrors.map((e) => e.message).join(", ")
+            error: updateData.productSet.userErrors.map((e) => e.message).join(", ")
           });
-        } else if (updateData.productUpdate.product) {
+        } else if (updateData.productSet.product) {
           results.push({
             productId: normalizedId,
             success: true,
-            title: updateData.productUpdate.product.title
+            title: updateData.productSet.product.title
           });
         }
       } catch (error) {
