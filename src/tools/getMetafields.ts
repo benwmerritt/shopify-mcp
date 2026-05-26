@@ -7,7 +7,13 @@ const GetMetafieldsInputSchema = z.object({
   ownerType: z.enum(["PRODUCT", "PRODUCTVARIANT", "CUSTOMER", "ORDER", "COLLECTION", "SHOP"]).describe("Type of resource to get metafields for"),
   ownerId: z.string().optional().describe("ID of the specific resource (required for all except SHOP)"),
   namespace: z.string().optional().describe("Filter by metafield namespace"),
-  limit: z.number().default(50).describe("Maximum number of metafields to return")
+  limit: z.number().default(50).describe("Maximum number of metafields to return"),
+  includeDefinitions: z
+    .boolean()
+    .default(false)
+    .describe(
+      "Also return ALL metafield definitions for this owner type, merged with current values, so unfilled/empty fields are included (each entry has value:null and isSet:false when empty)"
+    )
 });
 
 type GetMetafieldsInput = z.infer<typeof GetMetafieldsInputSchema>;
@@ -35,6 +41,74 @@ function normalizeOwnerId(id: string, ownerType: string): string {
   }
   
   return `gid://shopify/${gidType}/${id}`;
+}
+
+// Fetch all metafield definitions for an owner type and merge them with the
+// values currently set, so callers can see unfilled (empty) fields too.
+async function fetchDefinitionsMerged(
+  ownerType: string,
+  setMetafields: Array<{ namespace: string; key: string; value: string | null }>
+) {
+  const query = gql`
+    query MetafieldDefinitionsForOwner(
+      $ownerType: MetafieldOwnerType!
+      $first: Int!
+    ) {
+      metafieldDefinitions(ownerType: $ownerType, first: $first) {
+        edges {
+          node {
+            id
+            name
+            namespace
+            key
+            description
+            type {
+              name
+            }
+          }
+        }
+      }
+    }
+  `;
+
+  const data = (await shopifyClient.request(query, {
+    ownerType,
+    first: 250
+  })) as {
+    metafieldDefinitions: {
+      edges: Array<{
+        node: {
+          id: string;
+          name: string;
+          namespace: string;
+          key: string;
+          description: string | null;
+          type: { name: string };
+        };
+      }>;
+    };
+  };
+
+  const valueByKey = new Map(
+    setMetafields.map((m) => [`${m.namespace}.${m.key}`, m.value])
+  );
+
+  return data.metafieldDefinitions.edges.map((edge) => {
+    const def = edge.node;
+    const fullKey = `${def.namespace}.${def.key}`;
+    const hasValue = valueByKey.has(fullKey);
+    return {
+      id: def.id,
+      namespace: def.namespace,
+      key: def.key,
+      fullKey,
+      name: def.name,
+      description: def.description,
+      type: def.type.name,
+      value: hasValue ? valueByKey.get(fullKey) ?? null : null,
+      isSet: hasValue
+    };
+  });
 }
 
 const getMetafields = {
@@ -95,13 +169,17 @@ const getMetafields = {
           };
         };
 
+        const shopMetafields = data.shop.metafields.edges.map((e) => e.node);
         return {
           owner: {
             type: "SHOP",
             id: data.shop.id,
             name: data.shop.name
           },
-          metafields: data.shop.metafields.edges.map((e) => e.node)
+          metafields: shopMetafields,
+          ...(input.includeDefinitions
+            ? { definitions: await fetchDefinitionsMerged("SHOP", shopMetafields) }
+            : {})
         };
       }
 
@@ -197,17 +275,28 @@ const getMetafields = {
 
       const ownerName = data.node.title || data.node.name || data.node.displayName || "Unknown";
 
+      const nodeMetafields =
+        data.node.metafields?.edges.map((e) => ({
+          ...e.node,
+          definitionName: e.node.definition?.name,
+          definitionDescription: e.node.definition?.description
+        })) || [];
+
       return {
         owner: {
           type: input.ownerType,
           id: data.node.id,
           name: ownerName
         },
-        metafields: data.node.metafields?.edges.map((e) => ({
-          ...e.node,
-          definitionName: e.node.definition?.name,
-          definitionDescription: e.node.definition?.description
-        })) || []
+        metafields: nodeMetafields,
+        ...(input.includeDefinitions
+          ? {
+              definitions: await fetchDefinitionsMerged(
+                input.ownerType,
+                nodeMetafields
+              )
+            }
+          : {})
       };
     } catch (error) {
       console.error("Error fetching metafields:", error);

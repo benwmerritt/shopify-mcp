@@ -222,7 +222,8 @@ MYSHOPIFY_DOMAIN=your-store.myshopify.com
 - `bulk-update-products`
 - `bulk-delete-products`
 - `count-products-by-tag`
-- `search-taxonomy` — browse Shopify's product category taxonomy
+- `find-products-by-metafield` — list products that have / don't have / both for a given `namespace.key`, paginated across the whole catalog via cursor
+- `search-taxonomy` — browse Shopify's product category taxonomy; set `includeAttributes:true` to also return each category's attributes (e.g. Color, Pattern) and their allowed values
 
 ### Collections
 - `get-collections`
@@ -253,15 +254,18 @@ MYSHOPIFY_DOMAIN=your-store.myshopify.com
 - `get-locations`
 
 ### Metafields
-- `get-metafields`
-- `set-metafield` (create or update)
+- `get-metafields` — set `includeDefinitions:true` to merge ALL definitions with current values so empty/unfilled fields show up (`value:null`, `isSet:false`)
+- `set-metafield` (create or update; supports `metaobject_reference` / `list.metaobject_reference`)
 - `delete-metafield`
 - `list-metafield-definitions` — discover metafield definitions for an owner type (PRODUCT, ORDER, CUSTOMER, …)
+- `get-metafield-options` — resolve a metafield's selectable options in one call (for metaobject-reference fields, returns the available metaobject entries; for choice-lists, the allowed choices)
 
 ### Metaobjects
 - `list-metaobject-definitions`
 - `get-metaobject-definition`
 - `create-metaobject`
+- `update-metaobject` — edit fields on an existing entry (only provided keys change)
+- `delete-metaobject`
 - `list-metaobjects`
 - `get-metaobject`
 

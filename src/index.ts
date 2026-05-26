@@ -43,7 +43,10 @@ import { getMetafields } from "./tools/getMetafields.js";
 import { deleteMetafield } from "./tools/deleteMetafield.js";
 import { setMetafield } from "./tools/setMetafield.js";
 import { listMetafieldDefinitions } from "./tools/listMetafieldDefinitions.js";
+import { getMetafieldOptions } from "./tools/getMetafieldOptions.js";
 import { createMetaobject } from "./tools/createMetaobject.js";
+import { updateMetaobject } from "./tools/updateMetaobject.js";
+import { deleteMetaobject } from "./tools/deleteMetaobject.js";
 import { listMetaobjects } from "./tools/listMetaobjects.js";
 import { getMetaobject } from "./tools/getMetaobject.js";
 import { listMetaobjectDefinitions } from "./tools/listMetaobjectDefinitions.js";
@@ -63,6 +66,7 @@ import { getBulkOperationStatus } from "./tools/getBulkOperationStatus.js";
 import { getBulkOperationResults } from "./tools/getBulkOperationResults.js";
 import { getStatus } from "./tools/getStatus.js";
 import { searchTaxonomy } from "./tools/searchTaxonomy.js";
+import { findProductsByMetafield } from "./tools/findProductsByMetafield.js";
 import { createFileUploadSession } from "./tools/createFileUploadSession.js";
 import { getFileUploadSession } from "./tools/getFileUploadSession.js";
 import { getFiles } from "./tools/getFiles.js";
@@ -157,7 +161,10 @@ async function startServer(accessToken: string, domain: string): Promise<void> {
   deleteMetafield.initialize(shopifyClient);
   setMetafield.initialize(shopifyClient);
   listMetafieldDefinitions.initialize(shopifyClient);
+  getMetafieldOptions.initialize(shopifyClient);
   createMetaobject.initialize(shopifyClient);
+  updateMetaobject.initialize(shopifyClient);
+  deleteMetaobject.initialize(shopifyClient);
   listMetaobjects.initialize(shopifyClient);
   getMetaobject.initialize(shopifyClient);
   listMetaobjectDefinitions.initialize(shopifyClient);
@@ -178,6 +185,7 @@ async function startServer(accessToken: string, domain: string): Promise<void> {
   getBulkOperationResults.initialize(shopifyClient);
   getStatus.initialize(shopifyClient);
   searchTaxonomy.initialize(shopifyClient);
+  findProductsByMetafield.initialize(shopifyClient);
   getFileUploadSession.initialize(shopifyClient);
   getFiles.initialize(shopifyClient);
   attachFileToProduct.initialize(shopifyClient);
@@ -955,6 +963,12 @@ async function startServer(accessToken: string, domain: string): Promise<void> {
           .number()
           .default(50)
           .describe("Maximum number of metafields to return"),
+        includeDefinitions: z
+          .boolean()
+          .default(false)
+          .describe(
+            "Also return ALL metafield definitions for this owner type, merged with current values, so unfilled/empty fields are included (value:null, isSet:false when empty)",
+          ),
       },
       async (args) => {
         const result = await getMetafields.execute(args);
@@ -1093,6 +1107,52 @@ async function startServer(accessToken: string, domain: string): Promise<void> {
       },
     );
 
+    // Resolve a metafield's selectable options in one call
+    server.tool(
+      "get-metafield-options",
+      {
+        definitionId: z
+          .string()
+          .optional()
+          .describe(
+            "Metafield definition GID. Provide this OR ownerType+namespace+key.",
+          ),
+        ownerType: z
+          .enum([
+            "PRODUCT",
+            "PRODUCTVARIANT",
+            "CUSTOMER",
+            "ORDER",
+            "COLLECTION",
+            "SHOP",
+          ])
+          .default("PRODUCT")
+          .describe("Owner type of the metafield (used with namespace+key)"),
+        namespace: z
+          .string()
+          .optional()
+          .describe("Metafield namespace (used with key)"),
+        key: z
+          .string()
+          .optional()
+          .describe("Metafield key (used with namespace)"),
+        limit: z
+          .number()
+          .default(50)
+          .describe("Maximum number of metaobject options to return (max 250)"),
+        cursor: z
+          .string()
+          .optional()
+          .describe("Pagination cursor for paging through metaobject options"),
+      },
+      async (args) => {
+        const result = await getMetafieldOptions.execute(args);
+        return {
+          content: [{ type: "text", text: JSON.stringify(result) }],
+        };
+      },
+    );
+
     // ==================== METAOBJECT TOOLS ====================
 
     // List metaobject definitions
@@ -1167,6 +1227,59 @@ async function startServer(accessToken: string, domain: string): Promise<void> {
       },
       async (args) => {
         const result = await createMetaobject.execute(args);
+        return {
+          content: [{ type: "text", text: JSON.stringify(result) }],
+        };
+      },
+    );
+
+    // Update an existing metaobject entry's fields
+    server.tool(
+      "update-metaobject",
+      {
+        id: z
+          .string()
+          .min(1)
+          .describe("Metaobject entry ID to update (numeric or full GID)"),
+        fields: z
+          .array(
+            z.object({
+              key: z
+                .string()
+                .min(1)
+                .describe("Metaobject field key from the definition"),
+              value: z.string().describe("Field value as a string"),
+            }),
+          )
+          .min(1)
+          .describe(
+            "Field values to set. Only the keys you provide are changed; other fields keep their current values.",
+          ),
+        handle: z
+          .string()
+          .min(1)
+          .optional()
+          .describe("Optional new handle for the entry"),
+      },
+      async (args) => {
+        const result = await updateMetaobject.execute(args);
+        return {
+          content: [{ type: "text", text: JSON.stringify(result) }],
+        };
+      },
+    );
+
+    // Delete a metaobject entry
+    server.tool(
+      "delete-metaobject",
+      {
+        id: z
+          .string()
+          .min(1)
+          .describe("Metaobject entry ID to delete (numeric or full GID)"),
+      },
+      async (args) => {
+        const result = await deleteMetaobject.execute(args);
         return {
           content: [{ type: "text", text: JSON.stringify(result) }],
         };
@@ -1810,11 +1923,57 @@ async function startServer(accessToken: string, domain: string): Promise<void> {
         siblingsOf: z.string().optional().describe("Category GID to get siblings of"),
         descendantsOf: z.string().optional().describe("Category GID to get descendants of"),
         limit: z.number().default(25).describe("Maximum categories to return"),
+        includeAttributes: z
+          .boolean()
+          .default(false)
+          .describe(
+            "Also return each category's standard attributes (e.g., Color, Material) and, for choice-list attributes, their allowed values",
+          ),
       },
       async (args) => {
         const result = await searchTaxonomy.execute(args);
         return {
           content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
+        };
+      },
+    );
+
+    // Find products with / without a specific metafield set
+    server.tool(
+      "find-products-by-metafield",
+      {
+        namespace: z
+          .string()
+          .min(1)
+          .describe("Metafield namespace (e.g., 'custom')"),
+        key: z.string().min(1).describe("Metafield key"),
+        present: z
+          .enum(["with", "without", "both"])
+          .default("with")
+          .describe(
+            "Return products that HAVE the metafield ('with'), do NOT have it ('without'), or partition into both ('both')",
+          ),
+        query: z
+          .string()
+          .optional()
+          .describe(
+            "Optional base Shopify product filter to narrow the scan (e.g., \"status:active\")",
+          ),
+        limit: z
+          .number()
+          .default(50)
+          .describe("Products to scan per page (max 250)"),
+        cursor: z
+          .string()
+          .optional()
+          .describe(
+            "Pagination cursor from a previous call to continue scanning",
+          ),
+      },
+      async (args) => {
+        const result = await findProductsByMetafield.execute(args);
+        return {
+          content: [{ type: "text", text: JSON.stringify(result) }],
         };
       },
     );
