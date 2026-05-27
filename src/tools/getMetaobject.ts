@@ -38,6 +38,11 @@ const getMetaobject = {
               handle
               displayName
               updatedAt
+              capabilities {
+                publishable {
+                  status
+                }
+              }
               fields {
                 key
                 value
@@ -58,6 +63,7 @@ const getMetaobject = {
               handle: string;
               displayName: string | null;
               updatedAt: string;
+              capabilities?: { publishable?: { status: string } | null } | null;
               fields: Array<{
                 key: string;
                 value: string | null;
@@ -77,6 +83,7 @@ const getMetaobject = {
           type: data.node.type,
           handle: data.node.handle,
           displayName: data.node.displayName,
+          status: data.node.capabilities?.publishable?.status ?? null,
           updatedAt: data.node.updatedAt,
           fields: data.node.fields.map((field) => ({
             key: field.key,

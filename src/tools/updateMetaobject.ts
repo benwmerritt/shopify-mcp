@@ -22,7 +22,13 @@ const UpdateMetaobjectInputSchema = z.object({
     .string()
     .min(1)
     .optional()
-    .describe("Optional new handle for the entry")
+    .describe("Optional new handle for the entry"),
+  status: z
+    .enum(["ACTIVE", "DRAFT"])
+    .optional()
+    .describe(
+      "Set publish status for publishable definitions. Pass ACTIVE to publish a draft entry, DRAFT to unpublish."
+    )
 });
 
 type UpdateMetaobjectInput = z.infer<typeof UpdateMetaobjectInputSchema>;
@@ -75,6 +81,11 @@ const updateMetaobject = {
               handle
               displayName
               updatedAt
+              capabilities {
+                publishable {
+                  status
+                }
+              }
               fields {
                 key
                 value
@@ -93,12 +104,19 @@ const updateMetaobject = {
       const metaobjectInput: {
         fields: Array<{ key: string; value: string }>;
         handle?: string;
+        capabilities?: { publishable: { status: "ACTIVE" | "DRAFT" } };
       } = {
         fields: input.fields
       };
 
       if (input.handle) {
         metaobjectInput.handle = input.handle;
+      }
+
+      if (input.status) {
+        metaobjectInput.capabilities = {
+          publishable: { status: input.status }
+        };
       }
 
       const data = (await shopifyClient.request(mutation, {
@@ -112,6 +130,7 @@ const updateMetaobject = {
             handle: string;
             displayName: string | null;
             updatedAt: string;
+            capabilities?: { publishable?: { status: string } | null } | null;
             fields: MetaobjectField[];
           } | null;
           userErrors: Array<{
@@ -145,6 +164,7 @@ const updateMetaobject = {
           type: metaobject.type,
           handle: metaobject.handle,
           displayName: metaobject.displayName,
+          status: metaobject.capabilities?.publishable?.status ?? null,
           updatedAt: metaobject.updatedAt,
           fields: formatFields(metaobject.fields)
         }

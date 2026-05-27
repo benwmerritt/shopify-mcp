@@ -1224,6 +1224,12 @@ async function startServer(accessToken: string, domain: string): Promise<void> {
           .describe(
             "Optional custom handle. Shopify auto-generates one if omitted",
           ),
+        status: z
+          .enum(["ACTIVE", "DRAFT"])
+          .optional()
+          .describe(
+            "Publish status for publishable definitions. Defaults to Shopify's DRAFT if omitted; pass ACTIVE to publish immediately.",
+          ),
       },
       async (args) => {
         const result = await createMetaobject.execute(args);
@@ -1260,6 +1266,12 @@ async function startServer(accessToken: string, domain: string): Promise<void> {
           .min(1)
           .optional()
           .describe("Optional new handle for the entry"),
+        status: z
+          .enum(["ACTIVE", "DRAFT"])
+          .optional()
+          .describe(
+            "Set publish status. ACTIVE publishes a draft entry; DRAFT unpublishes.",
+          ),
       },
       async (args) => {
         const result = await updateMetaobject.execute(args);
@@ -1302,6 +1314,12 @@ async function startServer(accessToken: string, domain: string): Promise<void> {
           .string()
           .optional()
           .describe("Pagination cursor for fetching the next page"),
+        status: z
+          .enum(["ACTIVE", "DRAFT"])
+          .optional()
+          .describe(
+            "Filter the fetched page to only ACTIVE or DRAFT entries (client-side). status is always returned on each entry regardless.",
+          ),
       },
       async (args) => {
         const result = await listMetaobjects.execute(args);

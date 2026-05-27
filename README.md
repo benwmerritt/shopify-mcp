@@ -263,11 +263,11 @@ MYSHOPIFY_DOMAIN=your-store.myshopify.com
 ### Metaobjects
 - `list-metaobject-definitions`
 - `get-metaobject-definition`
-- `create-metaobject`
-- `update-metaobject` — edit fields on an existing entry (only provided keys change)
+- `create-metaobject` — optional `status` (`ACTIVE`/`DRAFT`); defaults to Shopify's `DRAFT` for publishable definitions, pass `ACTIVE` to publish on create
+- `update-metaobject` — edit fields on an existing entry (only provided keys change); optional `status` to publish (`ACTIVE`) or unpublish (`DRAFT`)
 - `delete-metaobject`
-- `list-metaobjects`
-- `get-metaobject`
+- `list-metaobjects` — returns `status` per entry; optional `status` filter (applied client-side to the fetched page)
+- `get-metaobject` — returns the entry's publish `status`
 
 ### Files
 - `get-files` — list/search files in the store

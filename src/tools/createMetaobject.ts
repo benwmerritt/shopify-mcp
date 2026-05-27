@@ -17,7 +17,13 @@ const CreateMetaobjectInputSchema = z.object({
     .string()
     .min(1)
     .optional()
-    .describe("Optional custom handle. Shopify auto-generates one if omitted")
+    .describe("Optional custom handle. Shopify auto-generates one if omitted"),
+  status: z
+    .enum(["ACTIVE", "DRAFT"])
+    .optional()
+    .describe(
+      "Publish status for publishable definitions. Omit to use Shopify's default (DRAFT). Pass ACTIVE to create a published/usable entry."
+    )
 });
 
 type CreateMetaobjectInput = z.infer<typeof CreateMetaobjectInputSchema>;
@@ -58,6 +64,11 @@ const createMetaobject = {
               handle
               displayName
               updatedAt
+              capabilities {
+                publishable {
+                  status
+                }
+              }
               fields {
                 key
                 value
@@ -77,6 +88,7 @@ const createMetaobject = {
         type: string;
         fields: Array<{ key: string; value: string }>;
         handle?: string;
+        capabilities?: { publishable: { status: "ACTIVE" | "DRAFT" } };
       } = {
         type: input.type,
         fields: input.fields
@@ -84,6 +96,12 @@ const createMetaobject = {
 
       if (input.handle) {
         metaobjectInput.handle = input.handle;
+      }
+
+      if (input.status) {
+        metaobjectInput.capabilities = {
+          publishable: { status: input.status }
+        };
       }
 
       const data = (await shopifyClient.request(mutation, {
@@ -96,6 +114,7 @@ const createMetaobject = {
             handle: string;
             displayName: string | null;
             updatedAt: string;
+            capabilities?: { publishable?: { status: string } | null } | null;
             fields: MetaobjectField[];
           } | null;
           userErrors: Array<{
@@ -131,6 +150,7 @@ const createMetaobject = {
           type: metaobject.type,
           handle: metaobject.handle,
           displayName: metaobject.displayName,
+          status: metaobject.capabilities?.publishable?.status ?? null,
           updatedAt: metaobject.updatedAt,
           fields: formatFields(metaobject.fields)
         }

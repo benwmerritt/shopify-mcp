@@ -11,7 +11,13 @@ const ListMetaobjectsInputSchema = z.object({
   cursor: z
     .string()
     .optional()
-    .describe("Pagination cursor for fetching the next page")
+    .describe("Pagination cursor for fetching the next page"),
+  status: z
+    .enum(["ACTIVE", "DRAFT"])
+    .optional()
+    .describe(
+      "Filter the returned page to only ACTIVE or DRAFT entries (publishable definitions). Note: filtered client-side within the fetched page; status is always included on each entry regardless."
+    )
 });
 
 type ListMetaobjectsInput = z.infer<typeof ListMetaobjectsInputSchema>;
@@ -40,6 +46,11 @@ const listMetaobjects = {
                 handle
                 displayName
                 updatedAt
+                capabilities {
+                  publishable {
+                    status
+                  }
+                }
                 fields {
                   key
                   value
@@ -69,6 +80,7 @@ const listMetaobjects = {
               handle: string;
               displayName: string | null;
               updatedAt: string;
+              capabilities?: { publishable?: { status: string } | null } | null;
               fields: Array<{
                 key: string;
                 value: string | null;
@@ -83,20 +95,27 @@ const listMetaobjects = {
         };
       };
 
+      let metaobjects = data.metaobjects.edges.map((edge) => ({
+        id: edge.node.id,
+        type: edge.node.type,
+        handle: edge.node.handle,
+        displayName: edge.node.displayName,
+        status: edge.node.capabilities?.publishable?.status ?? null,
+        updatedAt: edge.node.updatedAt,
+        fields: edge.node.fields.map((field) => ({
+          key: field.key,
+          value: field.value,
+          type: field.type ?? undefined
+        }))
+      }));
+
+      if (input.status) {
+        metaobjects = metaobjects.filter((m) => m.status === input.status);
+      }
+
       return {
         type: input.type,
-        metaobjects: data.metaobjects.edges.map((edge) => ({
-          id: edge.node.id,
-          type: edge.node.type,
-          handle: edge.node.handle,
-          displayName: edge.node.displayName,
-          updatedAt: edge.node.updatedAt,
-          fields: edge.node.fields.map((field) => ({
-            key: field.key,
-            value: field.value,
-            type: field.type ?? undefined
-          }))
-        })),
+        metaobjects,
         pageInfo: {
           hasNextPage: data.metaobjects.pageInfo.hasNextPage,
           nextCursor: data.metaobjects.pageInfo.endCursor
