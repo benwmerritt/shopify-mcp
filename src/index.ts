@@ -31,6 +31,7 @@ import { deleteProduct } from "./tools/deleteProduct.js";
 import { deleteVariant } from "./tools/deleteVariant.js";
 import { deleteProductImages } from "./tools/deleteProductImages.js";
 import { bulkUpdateProducts } from "./tools/bulkUpdateProducts.js";
+import { bulkSetVariantMetafields } from "./tools/bulkSetVariantMetafields.js";
 import { bulkDeleteProducts } from "./tools/bulkDeleteProducts.js";
 import { getCollections } from "./tools/getCollections.js";
 import { manageCollectionProducts } from "./tools/manageCollectionProducts.js";
@@ -149,6 +150,7 @@ async function startServer(accessToken: string, domain: string): Promise<void> {
   deleteVariant.initialize(shopifyClient);
   deleteProductImages.initialize(shopifyClient);
   bulkUpdateProducts.initialize(shopifyClient);
+  bulkSetVariantMetafields.initialize(shopifyClient);
   bulkDeleteProducts.initialize(shopifyClient);
   getCollections.initialize(shopifyClient);
   manageCollectionProducts.initialize(shopifyClient);
@@ -1070,6 +1072,95 @@ async function startServer(accessToken: string, domain: string): Promise<void> {
       },
       async (args) => {
         const result = await setMetafield.execute(args);
+        return {
+          content: [{ type: "text", text: JSON.stringify(result) }],
+        };
+      },
+    );
+
+    // Bulk-set metafields across many variants of one product (one API call)
+    server.tool(
+      "bulk-set-variant-metafields",
+      {
+        productId: z
+          .string()
+          .min(1)
+          .describe("Product whose variants to update (numeric or full GID)"),
+        metafields: z
+          .array(
+            z.object({
+              namespace: z
+                .string()
+                .min(1)
+                .describe("Metafield namespace (e.g. 'custom')"),
+              key: z
+                .string()
+                .min(1)
+                .describe("Metafield key (e.g. 'sale_type', 'jet_size')"),
+              value: z
+                .string()
+                .describe(
+                  "Value as a string. For reference types pass the target GID; for list types pass a JSON array string.",
+                ),
+              type: z
+                .string()
+                .optional()
+                .describe(
+                  "Metafield type. Omit to inherit the field's definition type. Common: single_line_text_field, number_decimal, metaobject_reference, list.metaobject_reference.",
+                ),
+            }),
+          )
+          .min(1)
+          .optional()
+          .describe(
+            "UNIFORM mode: applied to every targeted variant. Combine with optional variantIds to restrict; omit variantIds to hit all variants of the product.",
+          ),
+        variantIds: z
+          .array(z.string().min(1))
+          .min(1)
+          .optional()
+          .describe(
+            "UNIFORM mode only: restrict to these variant IDs (numeric or GID). Omit to target all variants of the product.",
+          ),
+        variants: z
+          .array(
+            z.object({
+              variantId: z
+                .string()
+                .min(1)
+                .describe("Variant ID (numeric or full GID)"),
+              metafields: z
+                .array(
+                  z.object({
+                    namespace: z.string().min(1).describe("Metafield namespace"),
+                    key: z.string().min(1).describe("Metafield key"),
+                    value: z.string().describe("Value as a string"),
+                    type: z
+                      .string()
+                      .optional()
+                      .describe(
+                        "Metafield type. Omit to inherit the field's definition type.",
+                      ),
+                  }),
+                )
+                .min(1)
+                .describe("Metafields to set on this specific variant"),
+            }),
+          )
+          .min(1)
+          .optional()
+          .describe(
+            "PER-VARIANT mode: explicit per-variant metafields (different values per variant). Mutually exclusive with metafields/variantIds.",
+          ),
+        allowPartialUpdates: z
+          .boolean()
+          .default(true)
+          .describe(
+            "When true (default), valid variants save even if others in the batch fail; failures appear in userErrors.",
+          ),
+      },
+      async (args) => {
+        const result = await bulkSetVariantMetafields.execute(args);
         return {
           content: [{ type: "text", text: JSON.stringify(result) }],
         };

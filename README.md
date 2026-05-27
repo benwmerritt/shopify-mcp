@@ -256,6 +256,7 @@ MYSHOPIFY_DOMAIN=your-store.myshopify.com
 ### Metafields
 - `get-metafields` — set `includeDefinitions:true` to merge ALL definitions with current values so empty/unfilled fields show up (`value:null`, `isSet:false`)
 - `set-metafield` (create or update; supports `metaobject_reference` / `list.metaobject_reference`)
+- `bulk-set-variant-metafields` — set metafields across many variants of one product in a single `productVariantsBulkUpdate` call (up to 250 variants/call). UNIFORM mode (`metafields`) fans one value out to every variant and auto-discovers the variant IDs; PER-VARIANT mode (`variants`) sets different values per variant. Avoids one `set-metafield` call per variant.
 - `delete-metafield`
 - `list-metafield-definitions` — discover metafield definitions for an owner type (PRODUCT, ORDER, CUSTOMER, …)
 - `get-metafield-options` — resolve a metafield's selectable options in one call (for metaobject-reference fields, returns the available metaobject entries; for choice-lists, the allowed choices)
