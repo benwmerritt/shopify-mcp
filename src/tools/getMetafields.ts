@@ -7,6 +7,18 @@ const GetMetafieldsInputSchema = z.object({
   ownerType: z.enum(["PRODUCT", "PRODUCTVARIANT", "CUSTOMER", "ORDER", "COLLECTION", "SHOP"]).describe("Type of resource to get metafields for"),
   ownerId: z.string().optional().describe("ID of the specific resource (required for all except SHOP)"),
   namespace: z.string().optional().describe("Filter by metafield namespace"),
+  key: z
+    .string()
+    .optional()
+    .describe(
+      "Single metafield key (e.g. 'vehicle_model'). Must be paired with `namespace` — the tool builds the full 'namespace.key' filter for you. For multi-key lookups, use `keys` instead."
+    ),
+  keys: z
+    .array(z.string())
+    .optional()
+    .describe(
+      "Array of full 'namespace.key' strings (e.g. ['custom.vehicle_model','custom.vehicle_year']) for server-side filtering. Mutually exclusive with `key`."
+    ),
   limit: z.number().default(50).describe("Maximum number of metafields to return"),
   includeDefinitions: z
     .boolean()
@@ -20,6 +32,38 @@ type GetMetafieldsInput = z.infer<typeof GetMetafieldsInputSchema>;
 
 // Will be initialized in index.ts
 let shopifyClient: GraphQLClient;
+
+// Resolve the server-side `keys: [String!]` filter for the metafields connection.
+// Exported for unit tests.
+export function resolveKeysFilter(input: {
+  key?: string;
+  keys?: string[];
+  namespace?: string;
+}): string[] | undefined {
+  const hasKey = typeof input.key === "string" && input.key.length > 0;
+  const hasKeys = Array.isArray(input.keys) && input.keys.length > 0;
+
+  if (hasKey && hasKeys) {
+    throw new Error(
+      "Pass either `key` (with `namespace`) or `keys`, not both.",
+    );
+  }
+
+  if (hasKeys) {
+    return input.keys;
+  }
+
+  if (hasKey) {
+    if (!input.namespace) {
+      throw new Error(
+        "`key` requires `namespace`. Either pass both, or pass `keys: [\"namespace.key\"]`.",
+      );
+    }
+    return [`${input.namespace}.${input.key}`];
+  }
+
+  return undefined;
+}
 
 // Helper to normalize owner ID to GID format based on type
 function normalizeOwnerId(id: string, ownerType: string): string {
@@ -113,7 +157,8 @@ async function fetchDefinitionsMerged(
 
 const getMetafields = {
   name: "get-metafields",
-  description: "Get metafields for a product, variant, customer, order, collection, or shop",
+  description:
+    "Get metafields for a product, variant, customer, order, collection, or shop. Use `key`+`namespace` (single field) or `keys: [\"namespace.key\", …]` (multi) for server-side filtering via Shopify's metafields(keys:) arg — otherwise the response is truncated to `limit` (default 50) with no filter, which the agent may misread. Reminder for writes (set-metafield): `list.*_reference` types (e.g. custom.vehicle_year) expect a JSON array string value like '[\"gid://shopify/Metaobject/123\"]'; singular `*_reference` types take a plain GID string.",
   schema: GetMetafieldsInputSchema,
 
   initialize(client: GraphQLClient) {
@@ -122,14 +167,20 @@ const getMetafields = {
 
   execute: async (input: GetMetafieldsInput) => {
     try {
+      const keysFilter = resolveKeysFilter({
+        key: input.key,
+        keys: input.keys,
+        namespace: input.namespace,
+      });
+
       if (input.ownerType === "SHOP") {
         // Shop metafields query
         const shopQuery = gql`
-          query GetShopMetafields($first: Int!, $namespace: String) {
+          query GetShopMetafields($first: Int!, $namespace: String, $keys: [String!]) {
             shop {
               id
               name
-              metafields(first: $first, namespace: $namespace) {
+              metafields(first: $first, namespace: $namespace, keys: $keys) {
                 edges {
                   node {
                     id
@@ -148,7 +199,8 @@ const getMetafields = {
 
         const data = (await shopifyClient.request(shopQuery, {
           first: input.limit,
-          namespace: input.namespace
+          namespace: input.namespace,
+          keys: keysFilter
         })) as {
           shop: {
             id: string;
@@ -192,10 +244,10 @@ const getMetafields = {
 
       // Generic query for other types using node interface
       const query = gql`
-        query GetMetafields($id: ID!, $first: Int!, $namespace: String) {
+        query GetMetafields($id: ID!, $first: Int!, $namespace: String, $keys: [String!]) {
           node(id: $id) {
             ... on HasMetafields {
-              metafields(first: $first, namespace: $namespace) {
+              metafields(first: $first, namespace: $namespace, keys: $keys) {
                 edges {
                   node {
                     id
@@ -241,7 +293,8 @@ const getMetafields = {
       const data = (await shopifyClient.request(query, {
         id: ownerId,
         first: input.limit,
-        namespace: input.namespace
+        namespace: input.namespace,
+        keys: keysFilter
       })) as {
         node: {
           id: string;

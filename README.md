@@ -254,7 +254,7 @@ MYSHOPIFY_DOMAIN=your-store.myshopify.com
 - `get-locations`
 
 ### Metafields
-- `get-metafields` — set `includeDefinitions:true` to merge ALL definitions with current values so empty/unfilled fields show up (`value:null`, `isSet:false`)
+- `get-metafields` — server-side filter with `key`+`namespace` (single field) or `keys: ["namespace.key", …]` (multi) via Shopify's native `metafields(keys:)`; set `includeDefinitions:true` to merge ALL definitions with current values so empty/unfilled fields show up (`value:null`, `isSet:false`)
 - `set-metafield` (create or update; supports `metaobject_reference` / `list.metaobject_reference`)
 - `bulk-set-variant-metafields` — set metafields across many variants of one product in a single `productVariantsBulkUpdate` call (up to 250 variants/call). UNIFORM mode (`metafields`) fans one value out to every variant and auto-discovers the variant IDs; PER-VARIANT mode (`variants`) sets different values per variant. Avoids one `set-metafield` call per variant.
 - `delete-metafield`

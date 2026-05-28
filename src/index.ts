@@ -961,6 +961,18 @@ async function startServer(accessToken: string, domain: string): Promise<void> {
           .string()
           .optional()
           .describe("Filter by metafield namespace"),
+        key: z
+          .string()
+          .optional()
+          .describe(
+            "Single metafield key (e.g. 'vehicle_model'). Must be paired with `namespace` — the tool builds the full 'namespace.key' filter. For multi-key lookups, use `keys` instead.",
+          ),
+        keys: z
+          .array(z.string())
+          .optional()
+          .describe(
+            "Array of full 'namespace.key' strings (e.g. ['custom.vehicle_model','custom.vehicle_year']) for server-side filtering. Mutually exclusive with `key`.",
+          ),
         limit: z
           .number()
           .default(50)
