@@ -1,0 +1,54 @@
+name: Discord Push Notification
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Post to Discord
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: |
+          # Build commit list
+          COMMITS=$(cat <<'COMMITS_JSON'
+          ${{ toJson(github.event.commits) }}
+          COMMITS_JSON
+          )
+
+          COMMIT_COUNT=$(echo "$COMMITS" | jq 'length')
+          REPO="${{ github.repository }}"
+          BRANCH="${{ github.ref_name }}"
+          PUSHER="${{ github.event.pusher.name }}"
+          COMPARE="${{ github.event.compare }}"
+
+          # Format commit messages
+          COMMIT_LIST=""
+          for i in $(seq 0 $((COMMIT_COUNT - 1))); do
+            MSG=$(echo "$COMMITS" | jq -r ".[$i].message" | head -1)
+            SHA=$(echo "$COMMITS" | jq -r ".[$i].id" | cut -c1-7)
+            URL=$(echo "$COMMITS" | jq -r ".[$i].url")
+            COMMIT_LIST="$COMMIT_LIST[\`$SHA\`]($URL) $MSG\n"
+          done
+
+          # Build Discord embed
+          PAYLOAD=$(jq -n \
+            --arg title "shopify-mcp Push: $COMMIT_COUNT commit(s) to $BRANCH" \
+            --arg desc "$(echo -e "$COMMIT_LIST")" \
+            --arg url "$COMPARE" \
+            --arg footer "Pushed by $PUSHER" \
+            --argjson color 3066993 \
+            '{
+              embeds: [{
+                title: $title,
+                description: $desc,
+                url: $url,
+                color: $color,
+                footer: { text: $footer },
+                timestamp: (now | strftime("%Y-%m-%dT%H:%M:%SZ"))
+              }]
+            }')
+
+          curl -s -H "Content-Type: application/json" -d "$PAYLOAD" "$DISCORD_WEBHOOK_URL"
