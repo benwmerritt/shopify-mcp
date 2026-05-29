@@ -32,7 +32,7 @@ let shopifyClient: GraphQLClient;
 const listMetafieldDefinitions = {
   name: "list-metafield-definitions",
   description:
-    "List metafield definitions (schema) for a given owner type so you can discover what custom metafields have been defined for products, collections, customers, orders, etc.",
+    "List metafield definitions (schema) for a given owner type so you can discover what custom metafields have been defined for products, collections, customers, orders, etc. Each definition now includes `constraints` — e.g. `{key:\"category\", values:[\"vp-2\",\"vp-2-2-3\",…]}` means the metafield only applies to products in those taxonomy categories. If you set such a metafield on a product outside the allowed categories, Shopify silently filters the value out on read.",
   schema: ListMetafieldDefinitionsInputSchema,
 
   initialize(client: GraphQLClient) {
@@ -70,6 +70,12 @@ const listMetafieldDefinitions = {
                   name
                   type
                   value
+                }
+                constraints {
+                  key
+                  values(first: 50) {
+                    nodes { value }
+                  }
                 }
                 access {
                   admin
@@ -110,6 +116,10 @@ const listMetafieldDefinitions = {
                 type: string;
                 value: string;
               }>;
+              constraints: {
+                key: string | null;
+                values: { nodes: Array<{ value: string }> };
+              } | null;
               access: {
                 admin: string;
                 storefront: string;
@@ -135,6 +145,14 @@ const listMetafieldDefinitions = {
           ownerType: edge.node.ownerType,
           pinnedPosition: edge.node.pinnedPosition,
           validations: edge.node.validations,
+          // Flatten constraints to { key, values: string[] } — agents need to
+          // see category-gating (e.g. vehicle_* requires vp-2*) BEFORE writing.
+          constraints: edge.node.constraints
+            ? {
+                key: edge.node.constraints.key,
+                values: edge.node.constraints.values.nodes.map((n) => n.value),
+              }
+            : null,
           access: edge.node.access,
         })),
         pageInfo: {

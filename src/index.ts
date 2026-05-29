@@ -498,6 +498,12 @@ async function startServer(accessToken: string, domain: string): Promise<void> {
         descriptionHtml: z.string().optional(),
         vendor: z.string().optional(),
         productType: z.string().optional(),
+        category: z
+          .string()
+          .optional()
+          .describe(
+            "Shopify Standard Product Taxonomy GID. Uses `vp-*` for Vehicles & Parts (e.g. 'gid://shopify/TaxonomyCategory/vp-2-2-3-2' = Non-Electric Motorcycles & Scooters). Use `search-taxonomy` to find IDs — don't guess. The tool VERIFIES the category stuck by comparing returned product.category.id to what you sent; throws a clear error if it didn't, instead of returning a silently-null category.",
+          ),
         tags: z.array(z.string()).optional(),
         status: z.enum(["ACTIVE", "DRAFT", "ARCHIVED"]).optional(),
 

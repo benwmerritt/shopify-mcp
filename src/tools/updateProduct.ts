@@ -29,7 +29,7 @@ const UpdateProductInputSchema = z.object({
   descriptionHtml: z.string().optional(),
   vendor: z.string().optional(),
   productType: z.string().optional(),
-  category: z.string().optional().describe("Taxonomy category GID (e.g., 'gid://shopify/TaxonomyCategory/sg-4-17-2-17'). Use search-taxonomy to find IDs."),
+  category: z.string().optional().describe("Shopify Standard Product Taxonomy GID. New format uses `vp-*` for Vehicles & Parts (e.g. 'gid://shopify/TaxonomyCategory/vp-2-2-3-2' = Non-Electric Motorcycles & Scooters). Use `search-taxonomy` to find IDs — don't guess. The tool VERIFIES the category stuck by comparing the returned product.category.id to what you sent; if they don't match it throws a clear error instead of silently returning null."),
   tags: z.array(z.string()).optional(),
   status: z.enum(["ACTIVE", "DRAFT", "ARCHIVED"]).optional(),
 
@@ -51,6 +51,25 @@ type UpdateProductInput = z.infer<typeof UpdateProductInputSchema>;
 
 // Will be initialized in index.ts
 let shopifyClient: GraphQLClient;
+
+// Verify that productSet actually applied the requested category — Shopify
+// silently returns null when it doesn't recognise the GID (e.g. wrong taxonomy
+// namespace), so we surface a loud error instead of leaking that silent failure.
+// Exported for unit tests.
+export function verifyCategorySet(
+  returnedProduct: { category: { id: string } | null },
+  requestedCategoryGid: string,
+): void {
+  const got = returnedProduct.category?.id ?? null;
+  if (got === requestedCategoryGid) {
+    return;
+  }
+  throw new Error(
+    `Category did not stick. Sent "${requestedCategoryGid}", got back ${
+      got ? `"${got}"` : "null"
+    }. Verify the GID via search-taxonomy (the new Shopify Standard Product Taxonomy uses prefixes like vp-* for Vehicles & Parts; vp-2-2-3-2 = Non-Electric Motorcycles & Scooters).`,
+  );
+}
 
 // Helper to normalize product ID to GID format
 function normalizeProductId(id: string): string {
@@ -224,6 +243,7 @@ const updateProduct = {
             descriptionHtml: string;
             vendor: string;
             productType: string;
+            category: { id: string; name: string; fullName: string } | null;
             status: string;
             tags: string[];
             variants: {
@@ -270,6 +290,13 @@ const updateProduct = {
 
       // Format response
       const product = data.productSet.product;
+
+      // Loud-fail if the caller asked to set the category and Shopify silently
+      // ignored it (invalid taxonomy GID, wrong namespace, etc).
+      if (input.category !== undefined) {
+        verifyCategorySet(product, input.category);
+      }
+
       return {
         product: {
           id: product.id,
@@ -278,6 +305,7 @@ const updateProduct = {
           descriptionHtml: product.descriptionHtml,
           vendor: product.vendor,
           productType: product.productType,
+          category: product.category,
           status: product.status,
           tags: product.tags,
           variants: product.variants.edges.map((e) => e.node),

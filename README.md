@@ -213,9 +213,9 @@ MYSHOPIFY_DOMAIN=your-store.myshopify.com
 ## Tool catalog
 
 ### Products
-- `products` — unified lookup/search/filter. Pass `id` for a single product; omit `id` to list/search with filters (`title`, `status`, `vendor`, `tag`, inventory, dates, `hasImages`, …). Supports `fields`: `slim | standard | full | []`. Page size capped at 100.
+- `products` — unified lookup/search/filter. Pass `id` for a single product; omit `id` to list/search with filters (`title`, `status`, `vendor`, `tag`, inventory, dates, `hasImages`, …). Returns the product's Shopify Standard Product Taxonomy `category` (`{id, name, fullName}`) in `slim`/`standard`/`full`. Page size capped at 100.
 - `create-product`
-- `update-product`
+- `update-product` — accepts `category` (Shopify Standard Product Taxonomy GID, `vp-*` prefix); the tool verifies the category actually stuck and throws a loud, actionable error if Shopify silently rejected the GID, instead of leaving you with a null `category`.
 - `delete-product`
 - `delete-variant`
 - `delete-product-images`
@@ -258,7 +258,7 @@ MYSHOPIFY_DOMAIN=your-store.myshopify.com
 - `set-metafield` (create or update; supports `metaobject_reference` / `list.metaobject_reference`)
 - `bulk-set-variant-metafields` — set metafields across many variants of one product in a single `productVariantsBulkUpdate` call (up to 250 variants/call). UNIFORM mode (`metafields`) fans one value out to every variant and auto-discovers the variant IDs; PER-VARIANT mode (`variants`) sets different values per variant. Avoids one `set-metafield` call per variant.
 - `delete-metafield`
-- `list-metafield-definitions` — discover metafield definitions for an owner type (PRODUCT, ORDER, CUSTOMER, …)
+- `list-metafield-definitions` — discover metafield definitions for an owner type (PRODUCT, ORDER, CUSTOMER, …); each entry now includes `constraints` (e.g. `{key:"category", values:["vp-2","vp-2-2-3", …]}`) so agents can see category-gating *before* writing (e.g. `vehicle_*` requires `vp-2*` Vehicle categories; values on disallowed categories are silently filtered out by Shopify on read).
 - `get-metafield-options` — resolve a metafield's selectable options in one call (for metaobject-reference fields, returns the available metaobject entries; for choice-lists, the allowed choices)
 
 ### Metaobjects
