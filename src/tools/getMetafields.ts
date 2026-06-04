@@ -65,6 +65,19 @@ export function resolveKeysFilter(input: {
   return undefined;
 }
 
+// Shopify Admin API 2026-01 rejects combining `metafields(keys:)` with
+// `namespace:`. When we use a keys filter, the keys must be full
+// "namespace.key" strings and namespace must be omitted.
+// Exported for unit tests.
+export function resolveNamespaceArg(input: {
+  namespace?: string;
+  keysFilter?: string[];
+}): string | undefined {
+  return input.keysFilter && input.keysFilter.length > 0
+    ? undefined
+    : input.namespace;
+}
+
 // Helper to normalize owner ID to GID format based on type
 function normalizeOwnerId(id: string, ownerType: string): string {
   if (id.startsWith("gid://")) {
@@ -199,7 +212,7 @@ const getMetafields = {
 
         const data = (await shopifyClient.request(shopQuery, {
           first: input.limit,
-          namespace: input.namespace,
+          namespace: resolveNamespaceArg({ namespace: input.namespace, keysFilter }),
           keys: keysFilter
         })) as {
           shop: {
@@ -293,7 +306,7 @@ const getMetafields = {
       const data = (await shopifyClient.request(query, {
         id: ownerId,
         first: input.limit,
-        namespace: input.namespace,
+        namespace: resolveNamespaceArg({ namespace: input.namespace, keysFilter }),
         keys: keysFilter
       })) as {
         node: {

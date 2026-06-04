@@ -1,4 +1,7 @@
-import { resolveKeysFilter } from "../src/tools/getMetafields.js";
+import {
+  resolveKeysFilter,
+  resolveNamespaceArg,
+} from "../src/tools/getMetafields.js";
 
 describe("get-metafields resolveKeysFilter", () => {
   it("returns undefined when no key/keys are provided (no filter)", () => {
@@ -33,5 +36,20 @@ describe("get-metafields resolveKeysFilter", () => {
         keys: ["custom.vehicle_year"],
       }),
     ).toThrow(/either.*key.*or.*keys/i);
+  });
+});
+
+describe("get-metafields resolveNamespaceArg", () => {
+  it("keeps namespace when no keys filter is used", () => {
+    expect(resolveNamespaceArg({ namespace: "custom" })).toBe("custom");
+  });
+
+  it("omits namespace when keys filter is used because Shopify rejects combining them", () => {
+    expect(
+      resolveNamespaceArg({
+        namespace: "custom",
+        keysFilter: ["custom.spec_type"],
+      }),
+    ).toBeUndefined();
   });
 });

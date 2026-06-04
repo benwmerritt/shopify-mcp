@@ -1083,9 +1083,9 @@ async function startServer(accessToken: string, domain: string): Promise<void> {
             "list.page_reference",
             "list.metaobject_reference",
           ])
-          .default("single_line_text_field")
+          .optional()
           .describe(
-            "Metafield type (determines how value is stored and validated). For `link`, pass a JSON string like {\"text\":\"Learn more\",\"url\":\"https://example.com\"}.",
+            "Metafield type. Optional when a definition exists (recommended); Shopify will use the definition type. For `link`, pass a JSON string like {\"text\":\"Learn more\",\"url\":\"https://example.com\"}.",
           ),
       },
       async (args) => {

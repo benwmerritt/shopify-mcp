@@ -37,7 +37,6 @@ const SetMetafieldInputSchema = z.object({
     "link",
     // Color
     "color",
-    // Reference types
     "product_reference",
     "variant_reference",
     "collection_reference",
@@ -59,7 +58,7 @@ const SetMetafieldInputSchema = z.object({
     "list.file_reference",
     "list.page_reference",
     "list.metaobject_reference"
-  ]).default("single_line_text_field").describe("Metafield type (determines how value is stored and validated). For `link`, pass a JSON string like {\"text\":\"Learn more\",\"url\":\"https://example.com\"}.")
+  ]).optional().describe("Metafield type. Optional when a definition exists (recommended); Shopify will use the definition type. For `link`, pass a JSON string like {\"text\":\"Learn more\",\"url\":\"https://example.com\"}.")
 });
 
 type SetMetafieldInput = z.infer<typeof SetMetafieldInputSchema>;
@@ -146,7 +145,7 @@ const setMetafield = {
             namespace: input.namespace,
             key: input.key,
             value: input.value,
-            type: input.type
+            ...(input.type ? { type: input.type } : {})
           }
         ]
       })) as {
