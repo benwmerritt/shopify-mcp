@@ -43,6 +43,24 @@ const UpdateProductInputSchema = z.object({
   // For updating specific variants
   variants: z.array(VariantUpdateSchema).optional(),
 
+  // Rename a product option in place (e.g. "Voltage" -> "Model").
+  // Existing variants and their IDs are preserved.
+  renameOption: z.object({
+    from: z.string().min(1),
+    to: z.string().min(1),
+  }).optional(),
+
+  // Create additional variants on the product's existing option structure.
+  // options = option VALUES in the order of the product's option names;
+  // provide one value per option (Shopify rejects incomplete combinations).
+  newVariants: z.array(z.object({
+    price: z.string(),
+    sku: z.string().optional(),
+    barcode: z.string().optional(),
+    compareAtPrice: z.string().optional(),
+    options: z.array(z.string()).min(1),
+  })).optional(),
+
   // Images
   images: z.array(ImageSchema).optional(),
 });
@@ -84,6 +102,22 @@ export function buildVariantInput(
   if (fields.barcode !== undefined) v.barcode = fields.barcode;
   if (fields.sku !== undefined) v.inventoryItem = { sku: fields.sku };
   return v;
+}
+
+// Map positional option values to optionValues entries using the product's
+// option order (e.g. ["1.75mm", "24V"] on a product with options
+// [Size, Voltage] -> [{optionName: "Size", name: "1.75mm"}, ...]).
+// Exported for unit tests.
+export function toOptionValues(
+  optionInfo: Array<{ id: string; name: string }>,
+  values: string[],
+): Array<{ optionName: string; name: string }> {
+  return values.map((name, i) => {
+    if (!optionInfo[i]) {
+      throw new Error(`Option value "${name}" has no matching product option at position ${i + 1}`);
+    }
+    return { optionName: optionInfo[i].name, name };
+  });
 }
 
 // Helper to normalize product ID to GID format
@@ -282,6 +316,61 @@ const updateProduct = {
       if (input.tags !== undefined) productInput.tags = input.tags;
       if (input.status !== undefined) productInput.status = input.status;
 
+      // Option names are needed whenever option values are written
+      const needsOptionNames = Boolean(
+        input.renameOption ||
+        (input.newVariants && input.newVariants.length > 0) ||
+        (input.variants || []).some((v) => v.options && v.options.length > 0)
+      );
+      let optionInfo: Array<{ id: string; name: string }> = [];
+      if (needsOptionNames) {
+        const optData = (await shopifyClient.request(
+          gql`query productOptions($id: ID!) { product(id: $id) { options { id name } } }`,
+          { id: productId }
+        )) as { product: { options: Array<{ id: string; name: string }> } | null };
+        if (!optData.product) {
+          throw new Error("Product not found - check the ID");
+        }
+        optionInfo = optData.product.options;
+      }
+
+      // Rename a product option in place (before any option-value writes)
+      if (input.renameOption) {
+        const opt = optionInfo.find((o) => o.name === input.renameOption!.from);
+        if (!opt) {
+          throw new Error(`Option "${input.renameOption.from}" not found on product (has: ${optionInfo.map((o) => o.name).join(", ")})`);
+        }
+        const renameData = (await shopifyClient.request(
+          gql`
+            mutation productOptionUpdate($productId: ID!, $option: OptionUpdateInput!) {
+              productOptionUpdate(productId: $productId, option: $option) {
+                product { options { id name } }
+                userErrors { field message }
+              }
+            }
+          `,
+          { productId, option: { id: opt.id, name: input.renameOption.to } }
+        )) as {
+          productOptionUpdate: {
+            product: { options: Array<{ id: string; name: string }> } | null;
+            userErrors: UserError[];
+          };
+        };
+        if (renameData.productOptionUpdate.userErrors.length > 0) {
+          throw new Error(
+            `option rename: ${formatUserErrors(renameData.productOptionUpdate.userErrors)}`
+          );
+        }
+        // Verify the rename actually applied (don't trust empty userErrors)
+        const renamed = renameData.productOptionUpdate.product?.options.find((o) => o.id === opt.id);
+        if (!renamed || renamed.name !== input.renameOption.to) {
+          throw new Error(
+            `Option rename did not apply: option ${opt.id} is "${renamed ? renamed.name : "missing"}" (expected "${input.renameOption.to}")`
+          );
+        }
+        opt.name = input.renameOption.to;
+      }
+
       // Handle variants (applied via productVariantsBulkUpdate, not productSet)
       const variantsToUpdate: Array<Record<string, unknown>> = [];
 
@@ -294,9 +383,13 @@ const updateProduct = {
       if (input.variants) {
         for (const variant of input.variants) {
           if (!variant.id) {
-            throw new Error("each entry in variants requires an id (productVariantsBulkUpdate updates existing variants in place)");
+            throw new Error("each entry in variants requires an id (productVariantsBulkUpdate updates existing variants in place; use newVariants to create variants)");
           }
-          variantsToUpdate.push(buildVariantInput(normalizeVariantId(variant.id), variant));
+          const v = buildVariantInput(normalizeVariantId(variant.id), variant);
+          if (variant.options && variant.options.length > 0) {
+            v.optionValues = toOptionValues(optionInfo, variant.options);
+          }
+          variantsToUpdate.push(v);
         }
       }
 
@@ -355,6 +448,70 @@ const updateProduct = {
           throw new Error("variant update returned no product - check the product ID");
         }
         product = data.productVariantsBulkUpdate.product || product;
+      }
+
+      // Create additional variants on the existing option structure
+      if (input.newVariants && input.newVariants.length > 0) {
+        // Creation needs a complete option-value set per variant (unlike
+        // updates, where partial values are valid) - fail clearly before the
+        // API round-trip rather than with Shopify's generic rejection.
+        for (const v of input.newVariants) {
+          if (v.options.length !== optionInfo.length) {
+            throw new Error(
+              `each newVariants entry needs one option value per product option - product has ${optionInfo.length} (${optionInfo.map((o) => o.name).join(", ")}), got ${v.options.length}`
+            );
+          }
+        }
+        const createData = (await shopifyClient.request(
+          gql`
+            mutation productVariantsBulkCreate($productId: ID!, $variants: [ProductVariantsBulkInput!]!) {
+              productVariantsBulkCreate(productId: $productId, variants: $variants) {
+                productVariants { id title sku price }
+                userErrors { field message }
+              }
+            }
+          `,
+          {
+            productId,
+            variants: input.newVariants.map((v) => ({
+              price: v.price,
+              ...(v.barcode !== undefined ? { barcode: v.barcode } : {}),
+              ...(v.compareAtPrice !== undefined ? { compareAtPrice: v.compareAtPrice } : {}),
+              ...(v.sku !== undefined ? { inventoryItem: { sku: v.sku } } : {}),
+              optionValues: toOptionValues(optionInfo, v.options),
+            })),
+          }
+        )) as {
+          productVariantsBulkCreate: {
+            productVariants: Array<{ id: string; title: string; sku: string | null; price: string }>;
+            userErrors: UserError[];
+          };
+        };
+        if (createData.productVariantsBulkCreate.userErrors.length > 0) {
+          throw new Error(
+            `variant create: ${formatUserErrors(createData.productVariantsBulkCreate.userErrors)}`
+          );
+        }
+      }
+
+      // Refetch when variants were created (earlier mutation payloads don't
+      // include them) or when only a rename ran (no payload at all yet).
+      const createdVariants = Boolean(input.newVariants && input.newVariants.length > 0);
+      if (createdVariants || (!product && input.renameOption)) {
+        const refetch = (await shopifyClient.request(
+          gql`
+            query productAfterUpdate($id: ID!) {
+              product(id: $id) {
+                ${PRODUCT_SELECTION}
+              }
+            }
+          `,
+          { id: productId }
+        )) as { product: ProductPayload | null };
+        if (!refetch.product) {
+          throw new Error("product not found after update - it may have been deleted concurrently");
+        }
+        product = refetch.product;
       }
 
       if (!product) {

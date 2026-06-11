@@ -1,4 +1,4 @@
-import { buildVariantInput, formatUserErrors, verifyCategorySet } from "../src/tools/updateProduct.js";
+import { buildVariantInput, formatUserErrors, toOptionValues, verifyCategorySet } from "../src/tools/updateProduct.js";
 
 describe("update-product verifyCategorySet", () => {
   const gid = "gid://shopify/TaxonomyCategory/vp-2-2-3-2";
@@ -72,5 +72,31 @@ describe("update-product formatUserErrors", () => {
         { field: null, message: "rate limited" },
       ]),
     ).toBe("title: can't be blank, rate limited");
+  });
+});
+
+describe("update-product toOptionValues", () => {
+  const optionInfo = [
+    { id: "gid://shopify/ProductOption/1", name: "Size" },
+    { id: "gid://shopify/ProductOption/2", name: "Voltage" },
+  ];
+
+  it("maps values positionally to the product's option names", () => {
+    expect(toOptionValues(optionInfo, ["1.75mm", "24V"])).toEqual([
+      { optionName: "Size", name: "1.75mm" },
+      { optionName: "Voltage", name: "24V" },
+    ]);
+  });
+
+  it("accepts fewer values than the product has options", () => {
+    expect(toOptionValues(optionInfo, ["1.75mm"])).toEqual([
+      { optionName: "Size", name: "1.75mm" },
+    ]);
+  });
+
+  it("throws when a value has no option at its position", () => {
+    expect(() => toOptionValues(optionInfo, ["1.75mm", "24V", "extra"])).toThrow(
+      /no matching product option at position 3/,
+    );
   });
 });
