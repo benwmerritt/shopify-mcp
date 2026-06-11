@@ -523,6 +523,32 @@ async function startServer(accessToken: string, domain: string): Promise<void> {
               sku: z.string().optional(),
               barcode: z.string().optional(),
               options: z.array(z.string()).optional(),
+              // Unit cost ("cost per item", shop currency)
+              cost: z.string().optional(),
+            }),
+          )
+          .optional(),
+
+        // Rename a product option in place (e.g. "Voltage" -> "Model").
+        // Existing variants and their IDs are preserved.
+        renameOption: z
+          .object({
+            from: z.string().min(1),
+            to: z.string().min(1),
+          })
+          .optional(),
+
+        // Create additional variants on the product's existing option structure.
+        // options = option VALUES in the order of the product's option names.
+        newVariants: z
+          .array(
+            z.object({
+              price: z.string(),
+              sku: z.string().optional(),
+              barcode: z.string().optional(),
+              compareAtPrice: z.string().optional(),
+              cost: z.string().optional(),
+              options: z.array(z.string()).min(1),
             }),
           )
           .optional(),
