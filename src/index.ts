@@ -523,6 +523,8 @@ async function startServer(accessToken: string, domain: string): Promise<void> {
               sku: z.string().optional(),
               barcode: z.string().optional(),
               options: z.array(z.string()).optional(),
+              // Unit cost ("cost per item", shop currency)
+              cost: z.string().optional(),
             }),
           )
           .optional(),
@@ -545,6 +547,7 @@ async function startServer(accessToken: string, domain: string): Promise<void> {
               sku: z.string().optional(),
               barcode: z.string().optional(),
               compareAtPrice: z.string().optional(),
+              cost: z.string().optional(),
               options: z.array(z.string()).min(1),
             }),
           )

@@ -11,6 +11,8 @@ const VariantUpdateSchema = z.object({
   sku: z.string().optional(),
   barcode: z.string().optional(),
   options: z.array(z.string()).optional(),
+  // Unit cost ("cost per item", shop currency) - lives on the inventory item
+  cost: z.string().optional(),
 });
 
 // Image schema
@@ -58,6 +60,7 @@ const UpdateProductInputSchema = z.object({
     sku: z.string().optional(),
     barcode: z.string().optional(),
     compareAtPrice: z.string().optional(),
+    cost: z.string().optional(),
     options: z.array(z.string()).min(1),
   })).optional(),
 
@@ -90,17 +93,23 @@ export function verifyCategorySet(
 }
 
 // Build a ProductVariantsBulkInput entry. ProductVariantsBulkInput has no
-// top-level sku; SKU lives on the inventory item (InventoryItemInput.sku).
+// top-level sku or cost; both live on the inventory item
+// (InventoryItemInput.sku / InventoryItemInput.cost).
 // Exported for unit tests.
 export function buildVariantInput(
   id: string,
-  fields: { price?: string; compareAtPrice?: string; sku?: string; barcode?: string },
+  fields: { price?: string; compareAtPrice?: string; sku?: string; barcode?: string; cost?: string },
 ): Record<string, unknown> {
   const v: Record<string, unknown> = { id };
   if (fields.price !== undefined) v.price = fields.price;
   if (fields.compareAtPrice !== undefined) v.compareAtPrice = fields.compareAtPrice;
   if (fields.barcode !== undefined) v.barcode = fields.barcode;
-  if (fields.sku !== undefined) v.inventoryItem = { sku: fields.sku };
+  if (fields.sku !== undefined || fields.cost !== undefined) {
+    v.inventoryItem = {
+      ...(fields.sku !== undefined ? { sku: fields.sku } : {}),
+      ...(fields.cost !== undefined ? { cost: fields.cost } : {}),
+    };
+  }
   return v;
 }
 
@@ -137,8 +146,11 @@ function normalizeVariantId(id: string): string {
 }
 
 // Shared product selection so productSet and productVariantsBulkUpdate
-// responses have the same shape.
-const PRODUCT_SELECTION = `
+// responses have the same shape. inventoryItem.unitCost requires the
+// read_inventory scope, so it is only selected when the caller actually
+// wrote cost - cost-less updates must keep working on tokens that only
+// have product scopes.
+const productSelection = (includeCost: boolean) => `
   id
   title
   handle
@@ -160,7 +172,12 @@ const PRODUCT_SELECTION = `
         price
         compareAtPrice
         sku
-        barcode
+        barcode${includeCost ? `
+        inventoryItem {
+          unitCost {
+            amount
+          }
+        }` : ""}
       }
     }
   }
@@ -194,6 +211,7 @@ type ProductPayload = {
         compareAtPrice: string | null;
         sku: string | null;
         barcode: string | null;
+        inventoryItem?: { unitCost: { amount: string } | null } | null;
       };
     }>;
   };
@@ -242,6 +260,12 @@ const updateProduct = {
         input.compareAtPrice !== undefined ||
         input.barcode !== undefined;
 
+      // Only select (and return) cost when the caller wrote one - see
+      // productSelection() for the scope rationale.
+      const wantsCost =
+        (input.variants || []).some((v) => v.cost !== undefined) ||
+        (input.newVariants || []).some((v) => v.cost !== undefined);
+
       if (hasSimpleVariantFields && !input.variants) {
         // Need to get the first variant ID
         const fetchQuery = gql`
@@ -278,7 +302,7 @@ const updateProduct = {
         mutation productSet($input: ProductSetInput!, $synchronous: Boolean) {
           productSet(input: $input, synchronous: $synchronous) {
             product {
-              ${PRODUCT_SELECTION}
+              ${productSelection(wantsCost)}
             }
             userErrors {
               field
@@ -292,7 +316,7 @@ const updateProduct = {
         mutation productVariantsBulkUpdate($productId: ID!, $variants: [ProductVariantsBulkInput!]!) {
           productVariantsBulkUpdate(productId: $productId, variants: $variants) {
             product {
-              ${PRODUCT_SELECTION}
+              ${productSelection(wantsCost)}
             }
             userErrors {
               field
@@ -466,6 +490,8 @@ const updateProduct = {
           gql`
             mutation productVariantsBulkCreate($productId: ID!, $variants: [ProductVariantsBulkInput!]!) {
               productVariantsBulkCreate(productId: $productId, variants: $variants) {
+                # lean payload - full state (incl. cost when written) comes from
+                # the refetch below, which always runs after creation
                 productVariants { id title sku price }
                 userErrors { field message }
               }
@@ -477,7 +503,14 @@ const updateProduct = {
               price: v.price,
               ...(v.barcode !== undefined ? { barcode: v.barcode } : {}),
               ...(v.compareAtPrice !== undefined ? { compareAtPrice: v.compareAtPrice } : {}),
-              ...(v.sku !== undefined ? { inventoryItem: { sku: v.sku } } : {}),
+              ...(v.sku !== undefined || v.cost !== undefined
+                ? {
+                    inventoryItem: {
+                      ...(v.sku !== undefined ? { sku: v.sku } : {}),
+                      ...(v.cost !== undefined ? { cost: v.cost } : {}),
+                    },
+                  }
+                : {}),
               optionValues: toOptionValues(optionInfo, v.options),
             })),
           }
@@ -502,7 +535,7 @@ const updateProduct = {
           gql`
             query productAfterUpdate($id: ID!) {
               product(id: $id) {
-                ${PRODUCT_SELECTION}
+                ${productSelection(wantsCost)}
               }
             }
           `,
@@ -530,7 +563,16 @@ const updateProduct = {
           category: product.category,
           status: product.status,
           tags: product.tags,
-          variants: product.variants.edges.map((e) => e.node),
+          variants: product.variants.edges.map((e) => ({
+            id: e.node.id,
+            title: e.node.title,
+            price: e.node.price,
+            compareAtPrice: e.node.compareAtPrice,
+            sku: e.node.sku,
+            barcode: e.node.barcode,
+            // cost is only queried (and returned) when the caller wrote one
+            ...(wantsCost ? { cost: e.node.inventoryItem?.unitCost?.amount ?? null } : {}),
+          })),
           images: product.images.edges.map((e) => e.node),
         },
       };

@@ -50,6 +50,20 @@ describe("update-product buildVariantInput", () => {
   it("passes an empty-string sku through (clears the SKU)", () => {
     expect(buildVariantInput(id, { sku: "" })).toEqual({ id, inventoryItem: { sku: "" } });
   });
+
+  it("maps cost to inventoryItem.cost", () => {
+    expect(buildVariantInput(id, { cost: "4.20" })).toEqual({
+      id,
+      inventoryItem: { cost: "4.20" },
+    });
+  });
+
+  it("merges sku and cost into a single inventoryItem", () => {
+    expect(buildVariantInput(id, { sku: "NEW-SKU", cost: "4.20" })).toEqual({
+      id,
+      inventoryItem: { sku: "NEW-SKU", cost: "4.20" },
+    });
+  });
 });
 
 describe("update-product formatUserErrors", () => {
