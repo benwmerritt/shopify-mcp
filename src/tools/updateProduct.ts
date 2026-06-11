@@ -3,7 +3,7 @@ import { gql } from "graphql-request";
 import { z } from "zod";
 
 // Variant update schema
-// Note: weight/weightUnit are not supported on ProductVariantSetInput - must be set via inventory item
+// Note: weight/weightUnit are not supported on ProductVariantsBulkInput - must be set via inventory item
 const VariantUpdateSchema = z.object({
   id: z.string().optional(),
   price: z.string().optional(),
@@ -71,6 +71,21 @@ export function verifyCategorySet(
   );
 }
 
+// Build a ProductVariantsBulkInput entry. ProductVariantsBulkInput has no
+// top-level sku; SKU lives on the inventory item (InventoryItemInput.sku).
+// Exported for unit tests.
+export function buildVariantInput(
+  id: string,
+  fields: { price?: string; compareAtPrice?: string; sku?: string; barcode?: string },
+): Record<string, unknown> {
+  const v: Record<string, unknown> = { id };
+  if (fields.price !== undefined) v.price = fields.price;
+  if (fields.compareAtPrice !== undefined) v.compareAtPrice = fields.compareAtPrice;
+  if (fields.barcode !== undefined) v.barcode = fields.barcode;
+  if (fields.sku !== undefined) v.inventoryItem = { sku: fields.sku };
+  return v;
+}
+
 // Helper to normalize product ID to GID format
 function normalizeProductId(id: string): string {
   if (id.startsWith("gid://")) {
@@ -85,6 +100,89 @@ function normalizeVariantId(id: string): string {
     return id;
   }
   return `gid://shopify/ProductVariant/${id}`;
+}
+
+// Shared product selection so productSet and productVariantsBulkUpdate
+// responses have the same shape.
+const PRODUCT_SELECTION = `
+  id
+  title
+  handle
+  descriptionHtml
+  vendor
+  productType
+  category {
+    id
+    name
+    fullName
+  }
+  status
+  tags
+  variants(first: 100) {
+    edges {
+      node {
+        id
+        title
+        price
+        compareAtPrice
+        sku
+        barcode
+      }
+    }
+  }
+  images(first: 20) {
+    edges {
+      node {
+        id
+        url
+        altText
+      }
+    }
+  }
+`;
+
+type ProductPayload = {
+  id: string;
+  title: string;
+  handle: string;
+  descriptionHtml: string;
+  vendor: string;
+  productType: string;
+  category: { id: string; name: string; fullName: string } | null;
+  status: string;
+  tags: string[];
+  variants: {
+    edges: Array<{
+      node: {
+        id: string;
+        title: string;
+        price: string;
+        compareAtPrice: string | null;
+        sku: string | null;
+        barcode: string | null;
+      };
+    }>;
+  };
+  images: {
+    edges: Array<{
+      node: {
+        id: string;
+        url: string;
+        altText: string | null;
+      };
+    }>;
+  };
+};
+
+type UserError = { field: string[] | null; message: string };
+
+// Format userErrors for error messages. field is nullable on the API side,
+// and a field-less error should read "message", not ": message".
+// Exported for unit tests.
+export function formatUserErrors(errors: UserError[]): string {
+  return errors
+    .map((e) => (e.field?.length ? `${e.field.join(".")}: ${e.message}` : e.message))
+    .join(", ");
 }
 
 const updateProduct = {
@@ -102,7 +200,13 @@ const updateProduct = {
 
       // First, fetch the product to get current variant IDs if needed
       let firstVariantId: string | null = null;
-      const hasSimpleVariantFields = input.price || input.sku || input.compareAtPrice || input.barcode;
+      // !== undefined (not truthiness): an empty string is a valid value,
+      // e.g. sku: "" clears the SKU.
+      const hasSimpleVariantFields =
+        input.price !== undefined ||
+        input.sku !== undefined ||
+        input.compareAtPrice !== undefined ||
+        input.barcode !== undefined;
 
       if (hasSimpleVariantFields && !input.variants) {
         // Need to get the first variant ID
@@ -129,45 +233,32 @@ const updateProduct = {
         }
       }
 
-      // Build the productSet mutation
-      const query = gql`
+      // Product-level fields go through productSet; variant field updates go
+      // through productVariantsBulkUpdate. productSet must NOT receive a
+      // partial variants list: ProductSetInput.variants is a full sync (any
+      // variant missing from the list is DELETED), and on current API
+      // versions each entry also requires optionValues. The previous
+      // implementation passed only the updated variants, which either errored
+      // (missing optionValues) or destroyed the product's other variants.
+      const productSetQuery = gql`
         mutation productSet($input: ProductSetInput!, $synchronous: Boolean) {
           productSet(input: $input, synchronous: $synchronous) {
             product {
-              id
-              title
-              handle
-              descriptionHtml
-              vendor
-              productType
-              category {
-                id
-                name
-                fullName
-              }
-              status
-              tags
-              variants(first: 100) {
-                edges {
-                  node {
-                    id
-                    title
-                    price
-                    compareAtPrice
-                    sku
-                    barcode
-                  }
-                }
-              }
-              images(first: 20) {
-                edges {
-                  node {
-                    id
-                    url
-                    altText
-                  }
-                }
-              }
+              ${PRODUCT_SELECTION}
+            }
+            userErrors {
+              field
+              message
+            }
+          }
+        }
+      `;
+
+      const bulkVariantQuery = gql`
+        mutation productVariantsBulkUpdate($productId: ID!, $variants: [ProductVariantsBulkInput!]!) {
+          productVariantsBulkUpdate(productId: $productId, variants: $variants) {
+            product {
+              ${PRODUCT_SELECTION}
             }
             userErrors {
               field
@@ -191,34 +282,22 @@ const updateProduct = {
       if (input.tags !== undefined) productInput.tags = input.tags;
       if (input.status !== undefined) productInput.status = input.status;
 
-      // Handle variants
+      // Handle variants (applied via productVariantsBulkUpdate, not productSet)
       const variantsToUpdate: Array<Record<string, unknown>> = [];
 
       // If simple variant fields provided, update first variant
       if (hasSimpleVariantFields && firstVariantId) {
-        const simpleVariant: Record<string, unknown> = { id: firstVariantId };
-        if (input.price !== undefined) simpleVariant.price = input.price;
-        if (input.compareAtPrice !== undefined) simpleVariant.compareAtPrice = input.compareAtPrice;
-        if (input.sku !== undefined) simpleVariant.sku = input.sku;
-        if (input.barcode !== undefined) simpleVariant.barcode = input.barcode;
-        variantsToUpdate.push(simpleVariant);
+        variantsToUpdate.push(buildVariantInput(firstVariantId, input));
       }
 
       // Add explicitly provided variants
       if (input.variants) {
         for (const variant of input.variants) {
-          const v: Record<string, unknown> = {};
-          if (variant.id) v.id = normalizeVariantId(variant.id);
-          if (variant.price !== undefined) v.price = variant.price;
-          if (variant.compareAtPrice !== undefined) v.compareAtPrice = variant.compareAtPrice;
-          if (variant.sku !== undefined) v.sku = variant.sku;
-          if (variant.barcode !== undefined) v.barcode = variant.barcode;
-          variantsToUpdate.push(v);
+          if (!variant.id) {
+            throw new Error("each entry in variants requires an id (productVariantsBulkUpdate updates existing variants in place)");
+          }
+          variantsToUpdate.push(buildVariantInput(normalizeVariantId(variant.id), variant));
         }
-      }
-
-      if (variantsToUpdate.length > 0) {
-        productInput.variants = variantsToUpdate;
       }
 
       // Handle images via URL
@@ -229,74 +308,60 @@ const updateProduct = {
         }));
       }
 
-      const variables = {
-        input: productInput,
-        synchronous: true,
-      };
+      const hasProductLevelChanges = Object.keys(productInput).length > 1;
+      let product: ProductPayload | null = null;
 
-      const data = (await shopifyClient.request(query, variables)) as {
-        productSet: {
-          product: {
-            id: string;
-            title: string;
-            handle: string;
-            descriptionHtml: string;
-            vendor: string;
-            productType: string;
-            category: { id: string; name: string; fullName: string } | null;
-            status: string;
-            tags: string[];
-            variants: {
-              edges: Array<{
-                node: {
-                  id: string;
-                  title: string;
-                  price: string;
-                  compareAtPrice: string | null;
-                  sku: string | null;
-                  barcode: string | null;
-                };
-              }>;
-            };
-            images: {
-              edges: Array<{
-                node: {
-                  id: string;
-                  url: string;
-                  altText: string | null;
-                };
-              }>;
-            };
-          } | null;
-          userErrors: Array<{
-            field: string[];
-            message: string;
-          }>;
+      if (hasProductLevelChanges) {
+        const data = (await shopifyClient.request(productSetQuery, {
+          input: productInput,
+          synchronous: true,
+        })) as {
+          productSet: { product: ProductPayload | null; userErrors: UserError[] };
         };
-      };
 
-      // Check for errors
-      if (data.productSet.userErrors.length > 0) {
-        throw new Error(
-          `Failed to update product: ${data.productSet.userErrors
-            .map((e) => `${e.field.join(".")}: ${e.message}`)
-            .join(", ")}`
-        );
+        // Check for errors (the outer catch adds the "Failed to update product" prefix)
+        if (data.productSet.userErrors.length > 0) {
+          throw new Error(formatUserErrors(data.productSet.userErrors));
+        }
+
+        if (!data.productSet.product) {
+          throw new Error("Product update returned no product - check if the ID is valid");
+        }
+
+        // Loud-fail if the caller asked to set the category and Shopify silently
+        // ignored it (invalid taxonomy GID, wrong namespace, etc).
+        if (input.category !== undefined) {
+          verifyCategorySet(data.productSet.product, input.category);
+        }
+
+        product = data.productSet.product;
       }
 
-      if (!data.productSet.product) {
-        throw new Error("Product update returned no product - check if the ID is valid");
+      if (variantsToUpdate.length > 0) {
+        const data = (await shopifyClient.request(bulkVariantQuery, {
+          productId,
+          variants: variantsToUpdate,
+        })) as {
+          productVariantsBulkUpdate: { product: ProductPayload | null; userErrors: UserError[] };
+        };
+
+        if (data.productVariantsBulkUpdate.userErrors.length > 0) {
+          throw new Error(
+            `variant updates: ${formatUserErrors(data.productVariantsBulkUpdate.userErrors)}`
+          );
+        }
+
+        if (!data.productVariantsBulkUpdate.product && !product) {
+          throw new Error("variant update returned no product - check the product ID");
+        }
+        product = data.productVariantsBulkUpdate.product || product;
+      }
+
+      if (!product) {
+        throw new Error("No changes provided - pass at least one product or variant field to update");
       }
 
       // Format response
-      const product = data.productSet.product;
-
-      // Loud-fail if the caller asked to set the category and Shopify silently
-      // ignored it (invalid taxonomy GID, wrong namespace, etc).
-      if (input.category !== undefined) {
-        verifyCategorySet(product, input.category);
-      }
-
       return {
         product: {
           id: product.id,
