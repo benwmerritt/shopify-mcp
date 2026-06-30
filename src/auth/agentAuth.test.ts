@@ -96,7 +96,7 @@ describe("checkToolAccess", () => {
 describe("createAgentAuthMiddleware", () => {
   it("should pass through when disabled", async () => {
     const mw = createAgentAuthMiddleware({ enabled: false });
-    const err = await mw.authorize(undefined, "createProduct");
+    const err = await mw.authorize(undefined, "create-product");
     expect(err).toBeNull();
   });
 
@@ -128,7 +128,7 @@ describe("createAgentAuthMiddleware", () => {
       permissions: ["read"],
       expiry: Math.floor(Date.now() / 1000) + 3600,
     });
-    const err = await mw.authorize(cred, "createProduct");
+    const err = await mw.authorize(cred, "create-product");
     expect(err).toContain("write");
   });
 });
