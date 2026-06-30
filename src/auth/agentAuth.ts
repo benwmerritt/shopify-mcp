@@ -89,34 +89,65 @@ export class StructuralVerifier implements AgentVerifier {
  * Unmapped tools default to the configured defaultPolicy.
  */
 const DEFAULT_TOOL_PERMISSIONS: Record<string, string[]> = {
-  // Read-only tools
-  products: ["read"],
-  orders: ["read"],
-  getCustomers: ["read"],
-  getCollections: ["read"],
-  getInventoryLevels: ["read"],
-  getMetafields: ["read"],
+  // Read-only tools (kebab-case — matches server.tool() registration)
+  "products": ["read"],
+  "orders": ["read"],
+  "draft-orders": ["read"],
+  "get-customers": ["read"],
+  "get-collections": ["read"],
+  "get-inventory-levels": ["read"],
+  "get-metafields": ["read"],
+  "get-metafield-options": ["read"],
+  "get-locations": ["read"],
+  "get-redirects": ["read"],
+  "get-status": ["read"],
+  "get-store-counts": ["read"],
+  "get-product-issues": ["read"],
+  "get-files": ["read"],
+  "get-metaobject": ["read"],
+  "get-metaobject-definition": ["read"],
+  "list-metafield-definitions": ["read"],
+  "list-metaobject-definitions": ["read"],
+  "list-metaobjects": ["read"],
+  "search-taxonomy": ["read"],
+  "count-products-by-tag": ["read"],
+  "find-products-by-metafield": ["read"],
+  "get-bulk-operation-status": ["read"],
+  "get-bulk-operation-results": ["read"],
 
   // Write tools
-  createProduct: ["write"],
-  updateProduct: ["write"],
-  deleteProduct: ["write"],
-  createDraftOrder: ["write"],
-  updateDraftOrder: ["write"],
-  completeDraftOrder: ["write"],
-  updateCustomer: ["write"],
-  updateOrder: ["write"],
-  createCollection: ["write"],
-  updateCollection: ["write"],
-  deleteCollection: ["write"],
-  updateInventory: ["write"],
-  setMetafield: ["write"],
-  deleteMetafield: ["write"],
+  "create-product": ["write"],
+  "update-product": ["write"],
+  "delete-product": ["write"],
+  "delete-variant": ["write"],
+  "delete-product-images": ["write"],
+  "attach-file-to-product": ["write"],
+  "detach-file-from-product": ["write"],
+  "create-draft-order": ["write"],
+  "update-draft-order": ["write"],
+  "complete-draft-order": ["write"],
+  "update-customer": ["write"],
+  "update-order": ["write"],
+  "create-collection": ["write"],
+  "update-collection": ["write"],
+  "delete-collection": ["write"],
+  "manage-collection-products": ["write"],
+  "update-inventory": ["write"],
+  "set-metafield": ["write"],
+  "delete-metafield": ["write"],
+  "create-metaobject": ["write"],
+  "update-metaobject": ["write"],
+  "delete-metaobject": ["write"],
+  "create-redirect": ["write"],
+  "delete-redirect": ["write"],
+  "create-file-upload-session": ["write"],
+  "get-file-upload-session": ["write"],
 
   // Bulk operations
-  bulkUpdateProducts: ["write", "bulk"],
-  bulkDeleteProducts: ["write", "bulk"],
-  bulkSetVariantMetafields: ["write", "bulk"],
+  "bulk-update-products": ["write", "bulk"],
+  "bulk-delete-products": ["write", "bulk"],
+  "bulk-set-variant-metafields": ["write", "bulk"],
+  "start-bulk-export": ["read", "bulk"],
 };
 
 // ---------------------------------------------------------------------------
@@ -134,7 +165,7 @@ export interface AgentAuthConfig {
   credentialHeader?: string;
   /**
    * Policy for tools not in the permission map.
-   * "deny" (default) = unmapped tools require "read" permission.
+   * "deny" (default) = unmapped tools are blocked entirely.
    * "allow" = unmapped tools are open to any authenticated agent.
    */
   defaultPolicy?: "allow" | "deny";
@@ -159,11 +190,8 @@ export function checkToolAccess(
   if (!required) {
     // Unmapped tool — check defaultPolicy
     if (config.defaultPolicy === "allow") return null;
-    // Default: deny — require at least "read"
-    if (!identity.permissions.includes("read")) {
-      return `Agent '${identity.agentId}' lacks 'read' permission for unmapped tool '${toolName}'`;
-    }
-    return null;
+    // Default: deny — block entirely (fail closed)
+    return `Agent '${identity.agentId}' is not authorized for unmapped tool '${toolName}'`;
   }
 
   const missing = required.filter(p => !identity.permissions.includes(p));
@@ -197,9 +225,11 @@ export function createAgentAuthMiddleware(config: AgentAuthConfig) {
 
   if (config.enabled && verifier instanceof StructuralVerifier) {
     console.warn(
-      "[agent-auth] WARNING: Using StructuralVerifier with auth enabled. " +
-        "This only checks credential format, NOT cryptographic validity. " +
-        "Use a real verifier (JWT, DID, ZKP) in production.",
+      "[agent-auth] SECURITY WARNING: StructuralVerifier is active. " +
+        "It accepts ANY well-formed JSON as a valid credential — callers " +
+        "can self-issue any permissions. This is a development stub ONLY. " +
+        "Set config.verifier to a real implementation (JWT, DID, ZKP, " +
+        "API key lookup) before enabling auth in production.",
     );
   }
 

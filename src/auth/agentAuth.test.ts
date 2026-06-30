@@ -58,39 +58,38 @@ describe("checkToolAccess", () => {
   const bulkAgent: AgentIdentity = { agentId: "bulk", permissions: ["read", "write", "bulk"], expiry: 0 };
   const noPermsAgent: AgentIdentity = { agentId: "noperms", permissions: [], expiry: 0 };
 
-  it("should allow read agent to use read tools", () => {
+  it("should allow read agent to use read tools (kebab-case)", () => {
     expect(checkToolAccess(readAgent, "products", { enabled: true })).toBeNull();
+    expect(checkToolAccess(readAgent, "get-customers", { enabled: true })).toBeNull();
   });
 
-  it("should deny read agent from write tools", () => {
-    const err = checkToolAccess(readAgent, "createProduct", { enabled: true });
+  it("should deny read agent from write tools (kebab-case)", () => {
+    const err = checkToolAccess(readAgent, "create-product", { enabled: true });
     expect(err).toContain("write");
   });
 
   it("should allow write agent to use write tools", () => {
-    expect(checkToolAccess(writeAgent, "updateProduct", { enabled: true })).toBeNull();
+    expect(checkToolAccess(writeAgent, "update-product", { enabled: true })).toBeNull();
+    expect(checkToolAccess(writeAgent, "delete-product", { enabled: true })).toBeNull();
   });
 
   it("should deny write agent from bulk tools", () => {
-    const err = checkToolAccess(writeAgent, "bulkDeleteProducts", { enabled: true });
+    const err = checkToolAccess(writeAgent, "bulk-delete-products", { enabled: true });
     expect(err).toContain("bulk");
   });
 
   it("should allow bulk agent to use bulk tools", () => {
-    expect(checkToolAccess(bulkAgent, "bulkUpdateProducts", { enabled: true })).toBeNull();
+    expect(checkToolAccess(bulkAgent, "bulk-update-products", { enabled: true })).toBeNull();
   });
 
-  it("should deny unmapped tools by default (defaultPolicy=deny) if no read perm", () => {
-    const err = checkToolAccess(noPermsAgent, "unknownTool", { enabled: true });
-    expect(err).toContain("read");
+  it("should fully block unmapped tools under default deny policy", () => {
+    const err = checkToolAccess(readAgent, "unknown-tool", { enabled: true });
+    expect(err).toContain("not authorized");
+    expect(err).toContain("unmapped");
   });
 
-  it("should allow unmapped tools for read agents when defaultPolicy=deny", () => {
-    expect(checkToolAccess(readAgent, "unknownTool", { enabled: true })).toBeNull();
-  });
-
-  it("should allow unmapped tools for any agent when defaultPolicy=allow", () => {
-    expect(checkToolAccess(noPermsAgent, "unknownTool", { enabled: true, defaultPolicy: "allow" })).toBeNull();
+  it("should allow unmapped tools when defaultPolicy=allow", () => {
+    expect(checkToolAccess(noPermsAgent, "unknown-tool", { enabled: true, defaultPolicy: "allow" })).toBeNull();
   });
 });
 
