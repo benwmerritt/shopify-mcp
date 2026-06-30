@@ -210,10 +210,13 @@ export function checkToolAccess(
  * Create an agent auth middleware that wraps MCP tool handlers.
  *
  * Usage:
- *   const authMiddleware = createAgentAuthMiddleware(configFromEnv());
+ *   const authMiddleware = createAgentAuthMiddleware({
+ *     ...configFromEnv(),
+ *     verifier: new MyProductionVerifier(),
+ *   });
  *
  *   // Wrap a tool handler:
- *   const protectedHandler = authMiddleware.protect("createProduct", originalHandler);
+ *   const protectedHandler = authMiddleware.protect("create-product", originalHandler);
  *
  *   // Or check manually:
  *   const error = await authMiddleware.authorize(credentialString, "createProduct");
