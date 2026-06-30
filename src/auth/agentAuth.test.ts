@@ -100,14 +100,18 @@ describe("createAgentAuthMiddleware", () => {
     expect(err).toBeNull();
   });
 
+  it("should throw when enabled without a verifier", () => {
+    expect(() => createAgentAuthMiddleware({ enabled: true })).toThrow("No verifier provided");
+  });
+
   it("should reject missing credential when enabled", async () => {
-    const mw = createAgentAuthMiddleware({ enabled: true });
+    const mw = createAgentAuthMiddleware({ enabled: true, verifier: new StructuralVerifier() });
     const err = await mw.authorize(undefined, "products");
     expect(err).toContain("required");
   });
 
   it("should authorize valid credential with correct permissions", async () => {
-    const mw = createAgentAuthMiddleware({ enabled: true });
+    const mw = createAgentAuthMiddleware({ enabled: true, verifier: new StructuralVerifier() });
     const cred = JSON.stringify({
       agentId: "a1",
       permissions: ["read"],
@@ -118,7 +122,7 @@ describe("createAgentAuthMiddleware", () => {
   });
 
   it("should deny valid credential with wrong permissions", async () => {
-    const mw = createAgentAuthMiddleware({ enabled: true });
+    const mw = createAgentAuthMiddleware({ enabled: true, verifier: new StructuralVerifier() });
     const cred = JSON.stringify({
       agentId: "a1",
       permissions: ["read"],

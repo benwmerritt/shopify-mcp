@@ -220,18 +220,19 @@ export function checkToolAccess(
  *   if (error) return { content: [{ type: "text", text: error }] };
  */
 export function createAgentAuthMiddleware(config: AgentAuthConfig) {
-  const verifier = config.verifier ?? new StructuralVerifier();
   const headerName = config.credentialHeader ?? "x-agent-credential";
 
-  if (config.enabled && verifier instanceof StructuralVerifier) {
-    console.warn(
-      "[agent-auth] SECURITY WARNING: StructuralVerifier is active. " +
-        "It accepts ANY well-formed JSON as a valid credential — callers " +
-        "can self-issue any permissions. This is a development stub ONLY. " +
-        "Set config.verifier to a real implementation (JWT, DID, ZKP, " +
-        "API key lookup) before enabling auth in production.",
+  if (config.enabled && !config.verifier) {
+    throw new Error(
+      "[agent-auth] No verifier provided. When auth is enabled, you MUST " +
+        "supply a real AgentVerifier implementation (JWT, DID, ZKP, API key " +
+        "lookup). StructuralVerifier is available for development only — " +
+        "pass it explicitly if you understand the risk: " +
+        "{ verifier: new StructuralVerifier(), enabled: true }",
     );
   }
+
+  const verifier = config.verifier ?? new StructuralVerifier();
 
   return {
     /** Whether auth is enabled */
