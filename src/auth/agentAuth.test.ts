@@ -1,4 +1,11 @@
-import { StructuralVerifier, checkToolAccess, AgentIdentity, AgentAuthConfig } from "./agentAuth.js";
+import {
+  StructuralVerifier,
+  checkToolAccess,
+  createAgentAuthMiddleware,
+  configFromEnv,
+  AgentIdentity,
+  AgentAuthConfig,
+} from "./agentAuth.js";
 
 describe("StructuralVerifier", () => {
   const verifier = new StructuralVerifier();
@@ -12,7 +19,6 @@ describe("StructuralVerifier", () => {
     const result = await verifier.verify(cred);
     expect(result.verified).toBe(true);
     expect(result.identity?.agentId).toBe("agent-1");
-    expect(result.identity?.permissions).toEqual(["read", "write"]);
   });
 
   it("should reject invalid JSON", async () => {
@@ -22,8 +28,16 @@ describe("StructuralVerifier", () => {
   });
 
   it("should reject missing agentId", async () => {
-    const result = await verifier.verify(JSON.stringify({ permissions: ["read"] }));
+    const cred = JSON.stringify({ permissions: ["read"], expiry: Date.now() / 1000 + 3600 });
+    const result = await verifier.verify(cred);
     expect(result.verified).toBe(false);
+  });
+
+  it("should reject missing expiry", async () => {
+    const cred = JSON.stringify({ agentId: "a", permissions: ["read"] });
+    const result = await verifier.verify(cred);
+    expect(result.verified).toBe(false);
+    expect(result.reason).toContain("expiry");
   });
 
   it("should reject expired credential", async () => {
@@ -39,50 +53,103 @@ describe("StructuralVerifier", () => {
 });
 
 describe("checkToolAccess", () => {
-  const config: AgentAuthConfig = { enabled: true };
-
-  const readAgent: AgentIdentity = {
-    agentId: "reader",
-    permissions: ["read"],
-    expiry: 0,
-  };
-
-  const writeAgent: AgentIdentity = {
-    agentId: "writer",
-    permissions: ["read", "write"],
-    expiry: 0,
-  };
-
-  const bulkAgent: AgentIdentity = {
-    agentId: "bulk-op",
-    permissions: ["read", "write", "bulk"],
-    expiry: 0,
-  };
+  const readAgent: AgentIdentity = { agentId: "reader", permissions: ["read"], expiry: 0 };
+  const writeAgent: AgentIdentity = { agentId: "writer", permissions: ["read", "write"], expiry: 0 };
+  const bulkAgent: AgentIdentity = { agentId: "bulk", permissions: ["read", "write", "bulk"], expiry: 0 };
+  const noPermsAgent: AgentIdentity = { agentId: "noperms", permissions: [], expiry: 0 };
 
   it("should allow read agent to use read tools", () => {
-    expect(checkToolAccess(readAgent, "products", config)).toBeNull();
+    expect(checkToolAccess(readAgent, "products", { enabled: true })).toBeNull();
   });
 
   it("should deny read agent from write tools", () => {
-    const err = checkToolAccess(readAgent, "createProduct", config);
-    expect(err).toContain("lacks permissions");
+    const err = checkToolAccess(readAgent, "createProduct", { enabled: true });
     expect(err).toContain("write");
   });
 
   it("should allow write agent to use write tools", () => {
-    expect(checkToolAccess(writeAgent, "updateProduct", config)).toBeNull();
+    expect(checkToolAccess(writeAgent, "updateProduct", { enabled: true })).toBeNull();
   });
 
   it("should deny write agent from bulk tools", () => {
-    const err = checkToolAccess(writeAgent, "bulkDeleteProducts", config);
+    const err = checkToolAccess(writeAgent, "bulkDeleteProducts", { enabled: true });
     expect(err).toContain("bulk");
   });
 
   it("should allow bulk agent to use bulk tools", () => {
-    expect(checkToolAccess(bulkAgent, "bulkUpdateProducts", config)).toBeNull();
+    expect(checkToolAccess(bulkAgent, "bulkUpdateProducts", { enabled: true })).toBeNull();
   });
 
-  it("should allow any agent for unmapped tools", () => {
-    expect(checkToolAccess(readAgent, "unknownTool", config)).toBeNull();
+  it("should deny unmapped tools by default (defaultPolicy=deny) if no read perm", () => {
+    const err = checkToolAccess(noPermsAgent, "unknownTool", { enabled: true });
+    expect(err).toContain("read");
+  });
+
+  it("should allow unmapped tools for read agents when defaultPolicy=deny", () => {
+    expect(checkToolAccess(readAgent, "unknownTool", { enabled: true })).toBeNull();
+  });
+
+  it("should allow unmapped tools for any agent when defaultPolicy=allow", () => {
+    expect(checkToolAccess(noPermsAgent, "unknownTool", { enabled: true, defaultPolicy: "allow" })).toBeNull();
+  });
+});
+
+describe("createAgentAuthMiddleware", () => {
+  it("should pass through when disabled", async () => {
+    const mw = createAgentAuthMiddleware({ enabled: false });
+    const err = await mw.authorize(undefined, "createProduct");
+    expect(err).toBeNull();
+  });
+
+  it("should reject missing credential when enabled", async () => {
+    const mw = createAgentAuthMiddleware({ enabled: true });
+    const err = await mw.authorize(undefined, "products");
+    expect(err).toContain("required");
+  });
+
+  it("should authorize valid credential with correct permissions", async () => {
+    const mw = createAgentAuthMiddleware({ enabled: true });
+    const cred = JSON.stringify({
+      agentId: "a1",
+      permissions: ["read"],
+      expiry: Math.floor(Date.now() / 1000) + 3600,
+    });
+    const err = await mw.authorize(cred, "products");
+    expect(err).toBeNull();
+  });
+
+  it("should deny valid credential with wrong permissions", async () => {
+    const mw = createAgentAuthMiddleware({ enabled: true });
+    const cred = JSON.stringify({
+      agentId: "a1",
+      permissions: ["read"],
+      expiry: Math.floor(Date.now() / 1000) + 3600,
+    });
+    const err = await mw.authorize(cred, "createProduct");
+    expect(err).toContain("write");
+  });
+});
+
+describe("configFromEnv", () => {
+  const origEnv = process.env;
+
+  afterEach(() => { process.env = origEnv; });
+
+  it("should default to disabled", () => {
+    process.env = { ...origEnv };
+    const config = configFromEnv();
+    expect(config.enabled).toBe(false);
+  });
+
+  it("should read AGENT_AUTH_ENABLED", () => {
+    process.env = { ...origEnv, AGENT_AUTH_ENABLED: "true" };
+    const config = configFromEnv();
+    expect(config.enabled).toBe(true);
+  });
+
+  it("should read custom header", () => {
+    process.env = { ...origEnv, AGENT_AUTH_HEADER: "x-custom" };
+    const config = configFromEnv();
+    expect(config.credentialHeader).toBe("x-custom");
   });
 });

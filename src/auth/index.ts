@@ -5,5 +5,6 @@ export {
   AgentAuthConfig,
   StructuralVerifier,
   checkToolAccess,
+  createAgentAuthMiddleware,
   configFromEnv,
 } from "./agentAuth.js";
