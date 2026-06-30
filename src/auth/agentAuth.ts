@@ -289,9 +289,23 @@ export function createAgentAuthMiddleware(config: AgentAuthConfig) {
 /**
  * Create an agent auth configuration from environment variables.
  */
+/**
+ * Create config from environment variables.
+ *
+ * When AGENT_AUTH_ENABLED=true, a StructuralVerifier is installed by
+ * default (for development). Set AGENT_VERIFIER=structural explicitly
+ * to acknowledge this. In production, supply a real verifier via code:
+ *
+ *   createAgentAuthMiddleware({
+ *     ...configFromEnv(),
+ *     verifier: new MyProductionVerifier(),
+ *   });
+ */
 export function configFromEnv(): AgentAuthConfig {
+  const enabled = process.env.AGENT_AUTH_ENABLED === "true";
   return {
-    enabled: process.env.AGENT_AUTH_ENABLED === "true",
+    enabled,
+    verifier: enabled ? new StructuralVerifier() : undefined,
     credentialHeader: process.env.AGENT_AUTH_HEADER || "x-agent-credential",
     defaultPolicy: (process.env.AGENT_AUTH_DEFAULT_POLICY as "allow" | "deny") || "deny",
   };
