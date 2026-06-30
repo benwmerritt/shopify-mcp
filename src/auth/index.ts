@@ -4,6 +4,7 @@ export {
   VerificationResult,
   AgentAuthConfig,
   StructuralVerifier,
+  SharedSecretVerifier,
   checkToolAccess,
   createAgentAuthMiddleware,
   configFromEnv,

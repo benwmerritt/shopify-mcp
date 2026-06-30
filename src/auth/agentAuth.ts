@@ -50,7 +50,8 @@ export interface AgentVerifier {
  * For development and testing. NOT for production.
  *
  * WARNING: This verifier only checks structure, not cryptographic validity.
- * Use a real verifier (JWT, DID, ZKP, etc.) in production.
+ * Any caller can self-assert any permissions. Use SharedSecretVerifier or
+ * a real verifier (JWT, DID, ZKP, etc.) in production.
  */
 export class StructuralVerifier implements AgentVerifier {
   async verify(credential: string): Promise<VerificationResult> {
@@ -59,12 +60,85 @@ export class StructuralVerifier implements AgentVerifier {
       if (!data.agentId || !Array.isArray(data.permissions)) {
         return { verified: false, reason: "missing agentId or permissions" };
       }
-      if (!data.expiry || typeof data.expiry !== "number" || data.expiry <= 0) {
-        return { verified: false, reason: "missing or invalid expiry (required)" };
+      if (!Number.isFinite(data.expiry) || data.expiry <= 0 || !Number.isInteger(data.expiry)) {
+        return { verified: false, reason: "missing or invalid expiry (required, must be integer unix timestamp)" };
       }
       if (data.expiry < Date.now() / 1000) {
         return { verified: false, reason: "credential expired" };
       }
+      return {
+        verified: true,
+        identity: {
+          agentId: data.agentId,
+          permissions: data.permissions,
+          expiry: data.expiry,
+          metadata: data.metadata,
+        },
+      };
+    } catch {
+      return { verified: false, reason: "invalid credential format" };
+    }
+  }
+}
+
+/**
+ * Shared-secret verifier — validates HMAC-SHA256 signed credentials.
+ * Suitable for production when you control both the agent and the server.
+ *
+ * Credential format: <base64url-signature>.<base64url-payload>
+ * Payload is JSON with { agentId, permissions, expiry }.
+ * Signature = HMAC-SHA256(secret, payload_bytes).
+ *
+ * Generate a secret: openssl rand -hex 32
+ * Set via AGENT_AUTH_SECRET env var or pass to constructor.
+ */
+export class SharedSecretVerifier implements AgentVerifier {
+  private secret: Uint8Array;
+
+  constructor(secret: string) {
+    if (!secret || secret.length < 32) {
+      throw new Error(
+        "[agent-auth] SharedSecretVerifier requires a secret of at least 32 characters. " +
+          "Generate one with: openssl rand -hex 32",
+      );
+    }
+    this.secret = new TextEncoder().encode(secret);
+  }
+
+  async verify(credential: string): Promise<VerificationResult> {
+    try {
+      const dotIndex = credential.indexOf(".");
+      if (dotIndex < 1) {
+        return { verified: false, reason: "invalid credential format: expected <signature>.<payload>" };
+      }
+
+      const signatureB64 = credential.slice(0, dotIndex);
+      const payloadB64 = credential.slice(dotIndex + 1);
+
+      const payloadBytes = Buffer.from(payloadB64, "base64url");
+      const expectedSig = Buffer.from(signatureB64, "base64url");
+
+      // Compute HMAC-SHA256
+      const { createHmac, timingSafeEqual } = await import("node:crypto");
+      const actualSig = createHmac("sha256", this.secret)
+        .update(payloadBytes)
+        .digest();
+
+      if (expectedSig.length !== actualSig.length || !timingSafeEqual(expectedSig, actualSig)) {
+        return { verified: false, reason: "invalid signature" };
+      }
+
+      const data = JSON.parse(payloadBytes.toString("utf-8"));
+      if (!data.agentId || !Array.isArray(data.permissions)) {
+        return { verified: false, reason: "missing agentId or permissions" };
+      }
+      if (!Number.isFinite(data.expiry) || data.expiry <= 0 || !Number.isInteger(data.expiry)) {
+        return { verified: false, reason: "missing or invalid expiry (required, must be integer unix timestamp)" };
+      }
+      if (data.expiry < Date.now() / 1000) {
+        return { verified: false, reason: "credential expired" };
+      }
+
       return {
         verified: true,
         identity: {
@@ -210,6 +284,10 @@ export function checkToolAccess(
  * Create an agent auth middleware that wraps MCP tool handlers.
  *
  * Usage:
+ *   // Via environment (AGENT_AUTH_ENABLED=true, AGENT_AUTH_SECRET=...):
+ *   const authMiddleware = createAgentAuthMiddleware(configFromEnv());
+ *
+ *   // Or with a custom verifier:
  *   const authMiddleware = createAgentAuthMiddleware({
  *     ...configFromEnv(),
  *     verifier: new MyProductionVerifier(),
@@ -219,7 +297,7 @@ export function checkToolAccess(
  *   const protectedHandler = authMiddleware.protect("create-product", originalHandler);
  *
  *   // Or check manually:
- *   const error = await authMiddleware.authorize(credentialString, "createProduct");
+ *   const error = await authMiddleware.authorize(credentialString, "create-product");
  *   if (error) return { content: [{ type: "text", text: error }] };
  */
 export function createAgentAuthMiddleware(config: AgentAuthConfig) {
@@ -266,16 +344,23 @@ export function createAgentAuthMiddleware(config: AgentAuthConfig) {
     /**
      * Wrap a tool handler with agent auth.
      * The wrapped handler checks auth before calling the original.
+     *
+     * MCP SDK tool callbacks receive (args, extra). HTTP headers are at
+     * extra.requestInfo.headers, not on the top-level extra object.
      */
     protect<T extends (...args: any[]) => any>(toolName: string, handler: T): T {
       if (!config.enabled) return handler;
 
       const wrapped = async (...args: any[]) => {
-        // Extract credential from the request context if available
-        const requestContext = args.find(
-          (a) => a && typeof a === "object" && headerName in a,
+        // MCP SDK passes (args, extra) — headers live at extra.requestInfo.headers
+        const extra = args.find(
+          (a) => a && typeof a === "object" && "requestInfo" in a,
         );
-        const credential = requestContext?.[headerName];
+        const headers = extra?.requestInfo?.headers;
+        const credential =
+          headers?.[headerName] ??       // IncomingHttpHeaders (lowercase)
+          headers?.[headerName.toLowerCase()] ??
+          undefined;
 
         const error = await wrapped.__middleware.authorize(credential, toolName);
         if (error) {
@@ -290,27 +375,29 @@ export function createAgentAuthMiddleware(config: AgentAuthConfig) {
 }
 
 /**
- * Create an agent auth configuration from environment variables.
- */
-/**
  * Create config from environment variables.
  *
- * AGENT_AUTH_ENABLED=true alone is NOT enough — you must also supply
- * a verifier in code. configFromEnv() returns enabled=true but no
- * verifier, so you MUST merge in your own:
+ * Set AGENT_AUTH_ENABLED=true and AGENT_AUTH_SECRET=<secret> to enable
+ * auth with the built-in SharedSecretVerifier (HMAC-SHA256).
  *
+ * For custom verifiers, merge your own:
  *   createAgentAuthMiddleware({
  *     ...configFromEnv(),
  *     verifier: new MyProductionVerifier(),
  *   });
- *
- * This is intentional: there is no secure default verifier that can
- * be selected by env var alone. StructuralVerifier accepts self-issued
- * credentials and must never be the default for an enabled config.
  */
 export function configFromEnv(): AgentAuthConfig {
+  const enabled = process.env.AGENT_AUTH_ENABLED === "true";
+  const secret = process.env.AGENT_AUTH_SECRET;
+
+  let verifier: AgentVerifier | undefined;
+  if (enabled && secret) {
+    verifier = new SharedSecretVerifier(secret);
+  }
+
   return {
-    enabled: process.env.AGENT_AUTH_ENABLED === "true",
+    enabled,
+    verifier,
     credentialHeader: process.env.AGENT_AUTH_HEADER || "x-agent-credential",
     defaultPolicy: (process.env.AGENT_AUTH_DEFAULT_POLICY as "allow" | "deny") || "deny",
   };
