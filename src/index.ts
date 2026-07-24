@@ -129,6 +129,7 @@ async function startServer(accessToken: string, domain: string): Promise<void> {
   const shopifyClient = new GraphQLClient(
     `https://${domain}/admin/api/${SHOPIFY_API_VERSION}/graphql.json`,
     {
+      fetch: globalThis.fetch,
       headers: {
         "X-Shopify-Access-Token": accessToken,
         "Content-Type": "application/json",
