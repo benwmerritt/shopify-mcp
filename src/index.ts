@@ -741,6 +741,7 @@ async function startServer(accessToken: string, domain: string): Promise<void> {
                 "VARIANT_PRICE",
                 "VARIANT_INVENTORY",
                 "IS_PRICE_REDUCED",
+                "PRODUCT_METAFIELD_DEFINITION",
               ]),
               relation: z.enum([
                 "EQUALS",
@@ -753,6 +754,7 @@ async function startServer(accessToken: string, domain: string): Promise<void> {
                 "LESS_THAN",
               ]),
               condition: z.string(),
+              conditionObjectId: z.string().optional(),
             }),
           )
           .optional()
@@ -808,6 +810,7 @@ async function startServer(accessToken: string, domain: string): Promise<void> {
                 "VARIANT_PRICE",
                 "VARIANT_INVENTORY",
                 "IS_PRICE_REDUCED",
+                "PRODUCT_METAFIELD_DEFINITION",
               ]),
               relation: z.enum([
                 "EQUALS",
@@ -820,6 +823,7 @@ async function startServer(accessToken: string, domain: string): Promise<void> {
                 "LESS_THAN",
               ]),
               condition: z.string(),
+              conditionObjectId: z.string().optional(),
             }),
           )
           .optional()
