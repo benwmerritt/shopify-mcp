@@ -90,7 +90,6 @@ const updateCollection = {
                   column
                   relation
                   condition
-                  conditionObjectId
                 }
               }
               productsCount {
@@ -157,7 +156,6 @@ const updateCollection = {
                 column: string;
                 relation: string;
                 condition: string;
-                conditionObjectId: string | null;
               }>;
             } | null;
             productsCount: {

@@ -92,7 +92,6 @@ const createCollection = {
                   column
                   relation
                   condition
-                  conditionObjectId
                 }
               }
               productsCount {
@@ -163,7 +162,6 @@ const createCollection = {
                 column: string;
                 relation: string;
                 condition: string;
-                conditionObjectId: string | null;
               }>;
             } | null;
             productsCount: {
