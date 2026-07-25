@@ -1,4 +1,21 @@
-import { verifyCategorySet } from "../src/tools/updateProduct.js";
+import {
+  selectedOptionsToOptionValues,
+  verifyCategorySet,
+} from "../src/tools/updateProduct.js";
+
+describe("update-product variant option preservation", () => {
+  it("maps selectedOptions to ProductSetInput optionValues", () => {
+    expect(
+      selectedOptionsToOptionValues([
+        { name: "Title", value: "Default Title" },
+        { name: "Size", value: "Large" },
+      ]),
+    ).toEqual([
+      { optionName: "Title", name: "Default Title" },
+      { optionName: "Size", name: "Large" },
+    ]);
+  });
+});
 
 describe("update-product verifyCategorySet", () => {
   const gid = "gid://shopify/TaxonomyCategory/vp-2-2-3-2";

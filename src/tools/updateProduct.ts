@@ -71,6 +71,18 @@ export function verifyCategorySet(
   );
 }
 
+// ProductSetInput requires optionValues on every variant payload, including
+// updates to an existing variant. Preserve the variant's current selections
+// instead of forcing callers to repeat them for simple price/SKU edits.
+export function selectedOptionsToOptionValues(
+  selectedOptions: Array<{ name: string; value: string }>,
+): Array<{ optionName: string; name: string }> {
+  return selectedOptions.map(({ name, value }) => ({
+    optionName: name,
+    name: value,
+  }));
+}
+
 // Helper to normalize product ID to GID format
 function normalizeProductId(id: string): string {
   if (id.startsWith("gid://")) {
@@ -100,19 +112,28 @@ const updateProduct = {
     try {
       const productId = normalizeProductId(input.id);
 
-      // First, fetch the product to get current variant IDs if needed
+      // First, fetch the product to get current variant IDs/options if needed
       let firstVariantId: string | null = null;
+      const variantOptionValues = new Map<
+        string,
+        Array<{ optionName: string; name: string }>
+      >();
       const hasSimpleVariantFields = input.price || input.sku || input.compareAtPrice || input.barcode;
 
-      if (hasSimpleVariantFields && !input.variants) {
-        // Need to get the first variant ID
+      if (hasSimpleVariantFields || input.variants?.some((variant) => variant.id)) {
+        // ProductSet requires optionValues even when updating an existing
+        // variant, so fetch and preserve each variant's current selections.
         const fetchQuery = gql`
           query getProduct($id: ID!) {
             product(id: $id) {
-              variants(first: 1) {
+              variants(first: 100) {
                 edges {
                   node {
                     id
+                    selectedOptions {
+                      name
+                      value
+                    }
                   }
                 }
               }
@@ -121,11 +142,27 @@ const updateProduct = {
         `;
 
         const fetchData = await shopifyClient.request(fetchQuery, { id: productId }) as {
-          product: { variants: { edges: Array<{ node: { id: string } }> } } | null;
+          product: {
+            variants: {
+              edges: Array<{
+                node: {
+                  id: string;
+                  selectedOptions: Array<{ name: string; value: string }>;
+                };
+              }>;
+            };
+          } | null;
         };
 
-        if (fetchData.product?.variants?.edges?.[0]) {
-          firstVariantId = fetchData.product.variants.edges[0].node.id;
+        const variantEdges = fetchData.product?.variants?.edges ?? [];
+        if (variantEdges[0]) {
+          firstVariantId = variantEdges[0].node.id;
+        }
+        for (const { node } of variantEdges) {
+          variantOptionValues.set(
+            node.id,
+            selectedOptionsToOptionValues(node.selectedOptions),
+          );
         }
       }
 
@@ -196,7 +233,10 @@ const updateProduct = {
 
       // If simple variant fields provided, update first variant
       if (hasSimpleVariantFields && firstVariantId) {
-        const simpleVariant: Record<string, unknown> = { id: firstVariantId };
+        const simpleVariant: Record<string, unknown> = {
+          id: firstVariantId,
+          optionValues: variantOptionValues.get(firstVariantId),
+        };
         if (input.price !== undefined) simpleVariant.price = input.price;
         if (input.compareAtPrice !== undefined) simpleVariant.compareAtPrice = input.compareAtPrice;
         if (input.sku !== undefined) simpleVariant.sku = input.sku;
@@ -208,7 +248,11 @@ const updateProduct = {
       if (input.variants) {
         for (const variant of input.variants) {
           const v: Record<string, unknown> = {};
-          if (variant.id) v.id = normalizeVariantId(variant.id);
+          if (variant.id) {
+            const variantId = normalizeVariantId(variant.id);
+            v.id = variantId;
+            v.optionValues = variantOptionValues.get(variantId);
+          }
           if (variant.price !== undefined) v.price = variant.price;
           if (variant.compareAtPrice !== undefined) v.compareAtPrice = variant.compareAtPrice;
           if (variant.sku !== undefined) v.sku = variant.sku;
