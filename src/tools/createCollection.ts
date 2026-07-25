@@ -11,8 +11,9 @@ const RuleSchema = z.object({
     "TITLE",
     "VARIANT_PRICE",
     "VARIANT_INVENTORY",
-    "IS_PRICE_REDUCED"
-  ]).describe("Field to filter products by"),
+    "IS_PRICE_REDUCED",
+    "PRODUCT_METAFIELD_DEFINITION"
+  ]).describe("Field to filter products by. PRODUCT_METAFIELD_DEFINITION filters on a product metafield — requires conditionObjectId (the MetafieldDefinition GID) and the definition's smartCollectionCondition capability enabled; condition is the value to match (for metaobject-reference metafields: the Metaobject GID)."),
   relation: z.enum([
     "EQUALS",
     "NOT_EQUALS",
@@ -23,7 +24,8 @@ const RuleSchema = z.object({
     "GREATER_THAN",
     "LESS_THAN"
   ]).describe("Comparison relation"),
-  condition: z.string().describe("Value to compare against")
+  condition: z.string().describe("Value to compare against"),
+  conditionObjectId: z.string().optional().describe("MetafieldDefinition GID — required when column is PRODUCT_METAFIELD_DEFINITION, omit otherwise")
 });
 
 // Image schema
@@ -90,6 +92,7 @@ const createCollection = {
                   column
                   relation
                   condition
+                  conditionObjectId
                 }
               }
               productsCount {
@@ -133,7 +136,8 @@ const createCollection = {
           rules: input.rules.map(rule => ({
             column: rule.column,
             relation: rule.relation,
-            condition: rule.condition
+            condition: rule.condition,
+            ...(rule.conditionObjectId ? { conditionObjectId: rule.conditionObjectId } : {})
           }))
         };
       }
@@ -159,6 +163,7 @@ const createCollection = {
                 column: string;
                 relation: string;
                 condition: string;
+                conditionObjectId: string | null;
               }>;
             } | null;
             productsCount: {
