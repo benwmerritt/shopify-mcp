@@ -69,6 +69,7 @@ import { getStatus } from "./tools/getStatus.js";
 import { searchTaxonomy } from "./tools/searchTaxonomy.js";
 import { findProductsByMetafield } from "./tools/findProductsByMetafield.js";
 import { createFileUploadSession } from "./tools/createFileUploadSession.js";
+import { uploadLocalFile } from "./tools/uploadLocalFile.js";
 import { getFileUploadSession } from "./tools/getFileUploadSession.js";
 import { getFiles } from "./tools/getFiles.js";
 import { attachFileToProduct } from "./tools/attachFileToProduct.js";
@@ -198,6 +199,10 @@ async function startServer(accessToken: string, domain: string): Promise<void> {
   createFileUploadSession.initialize({
     remoteMode: REMOTE_MODE,
     publicAppUrl,
+  });
+  uploadLocalFile.initialize({
+    client: shopifyClient,
+    localMode: !REMOTE_MODE,
   });
 
   // Function to create a new MCP server with all tools registered
@@ -2040,6 +2045,42 @@ async function startServer(accessToken: string, domain: string): Promise<void> {
         },
         async (args) => {
           const result = await getFileUploadSession.execute(args);
+          return {
+            content: [{ type: "text", text: JSON.stringify(result) }],
+          };
+        },
+      );
+    }
+
+    if (!REMOTE_MODE) {
+      server.tool(
+        "upload-local-file",
+        {
+          filePath: z
+            .string()
+            .min(1)
+            .describe(
+              "Absolute or process-relative path to a file on the MCP server host",
+            ),
+          filename: z
+            .string()
+            .min(1)
+            .optional()
+            .describe("Optional Shopify filename; defaults to the local basename"),
+          mimeType: z
+            .string()
+            .min(1)
+            .describe(
+              "MIME type for the upload, for example image/png or application/pdf",
+            ),
+          kind: z.enum(["AUTO", "IMAGE", "FILE"]).default("AUTO"),
+          altText: z.string().optional(),
+          duplicateResolutionMode: z
+            .enum(["APPEND_UUID", "RAISE_ERROR", "REPLACE"])
+            .default("APPEND_UUID"),
+        },
+        async (args) => {
+          const result = await uploadLocalFile.execute(args);
           return {
             content: [{ type: "text", text: JSON.stringify(result) }],
           };
