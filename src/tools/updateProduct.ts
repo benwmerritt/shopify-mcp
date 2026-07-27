@@ -265,6 +265,144 @@ const updateProduct = {
         productInput.variants = variantsToUpdate;
       }
 
+      const hasProductLevelChanges =
+        input.title !== undefined ||
+        input.descriptionHtml !== undefined ||
+        input.vendor !== undefined ||
+        input.productType !== undefined ||
+        input.category !== undefined ||
+        input.tags !== undefined ||
+        input.status !== undefined ||
+        (input.images !== undefined && input.images.length > 0);
+
+      // productSet requires productOptions when variants are included on API
+      // 2026-01, even for a narrow SKU/price edit. Route existing-variant-only
+      // updates through the purpose-built bulk mutation instead.
+      if (
+        !hasProductLevelChanges &&
+        variantsToUpdate.length > 0 &&
+        variantsToUpdate.every((variant) => variant.id)
+      ) {
+        const bulkQuery = gql`
+          mutation productVariantsBulkUpdate(
+            $productId: ID!
+            $variants: [ProductVariantsBulkInput!]!
+          ) {
+            productVariantsBulkUpdate(
+              productId: $productId
+              variants: $variants
+            ) {
+              productVariants {
+                id
+                title
+                price
+                compareAtPrice
+                sku
+                barcode
+              }
+              userErrors {
+                field
+                message
+              }
+            }
+          }
+        `;
+
+        const bulkVariants = variantsToUpdate.map((variant) => {
+          const bulkVariant = { ...variant };
+          delete bulkVariant.optionValues;
+          return bulkVariant;
+        });
+
+        const bulkData = (await shopifyClient.request(bulkQuery, {
+          productId,
+          variants: bulkVariants,
+        })) as {
+          productVariantsBulkUpdate: {
+            productVariants: Array<{
+              id: string;
+              title: string;
+              price: string;
+              compareAtPrice: string | null;
+              sku: string | null;
+              barcode: string | null;
+            }>;
+            userErrors: Array<{ field: string[]; message: string }>;
+          };
+        };
+
+        if (bulkData.productVariantsBulkUpdate.userErrors.length > 0) {
+          throw new Error(
+            `Failed to update product variants: ${bulkData.productVariantsBulkUpdate.userErrors
+              .map((e) => `${e.field.join(".")}: ${e.message}`)
+              .join(", ")}`
+          );
+        }
+
+        const readQuery = gql`
+          query getUpdatedProduct($id: ID!) {
+            product(id: $id) {
+              id
+              title
+              handle
+              descriptionHtml
+              vendor
+              productType
+              category { id name fullName }
+              status
+              tags
+              variants(first: 100) {
+                edges {
+                  node {
+                    id
+                    title
+                    price
+                    compareAtPrice
+                    sku
+                    barcode
+                  }
+                }
+              }
+              images(first: 20) {
+                edges {
+                  node { id url altText }
+                }
+              }
+            }
+          }
+        `;
+
+        const readData = (await shopifyClient.request(readQuery, {
+          id: productId,
+        })) as {
+          product: {
+            id: string;
+            title: string;
+            handle: string;
+            descriptionHtml: string;
+            vendor: string;
+            productType: string;
+            category: { id: string; name: string; fullName: string } | null;
+            status: string;
+            tags: string[];
+            variants: { edges: Array<{ node: Record<string, unknown> }> };
+            images: { edges: Array<{ node: Record<string, unknown> }> };
+          } | null;
+        };
+
+        if (!readData.product) {
+          throw new Error("Product update succeeded but read-back returned no product");
+        }
+
+        return {
+          product: {
+            ...readData.product,
+            variants: readData.product.variants.edges.map((e) => e.node),
+            images: readData.product.images.edges.map((e) => e.node),
+          },
+        };
+      }
+
       // Handle images via URL
       if (input.images && input.images.length > 0) {
         productInput.files = input.images.map(img => ({
