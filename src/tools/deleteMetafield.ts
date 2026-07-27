@@ -41,7 +41,9 @@ const deleteMetafield = {
               namespace
               key
               owner {
-                id
+                ... on Node {
+                  id
+                }
               }
             }
           }

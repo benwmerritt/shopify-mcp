@@ -31,6 +31,8 @@ describe("delete-metafield", () => {
 
     expect(request).toHaveBeenCalledTimes(2);
     expect(String(request.mock.calls[0][0])).toContain("node(id: $id)");
+    expect(String(request.mock.calls[0][0])).toContain("... on Node");
+    expect(String(request.mock.calls[0][0])).not.toMatch(/owner\s*\{\s*id\s*\}/);
     expect(request.mock.calls[0][1]).toEqual({
       id: "gid://shopify/Metafield/456",
     });
