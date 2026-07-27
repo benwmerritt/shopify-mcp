@@ -33,10 +33,44 @@ const deleteMetafield = {
     try {
       const metafieldId = normalizeMetafieldId(input.metafieldId);
 
+      const lookupQuery = gql`
+        query metafieldIdentifier($id: ID!) {
+          node(id: $id) {
+            ... on Metafield {
+              id
+              namespace
+              key
+              owner {
+                id
+              }
+            }
+          }
+        }
+      `;
+
+      const lookupData = (await shopifyClient.request(lookupQuery, {
+        id: metafieldId
+      })) as {
+        node: {
+          id: string;
+          namespace: string;
+          key: string;
+          owner: { id: string };
+        } | null;
+      };
+
+      if (!lookupData.node) {
+        throw new Error(`Metafield ${metafieldId} was not found`);
+      }
+
       const query = gql`
-        mutation metafieldDelete($input: MetafieldDeleteInput!) {
-          metafieldDelete(input: $input) {
-            deletedId
+        mutation metafieldsDelete($metafields: [MetafieldIdentifierInput!]!) {
+          metafieldsDelete(metafields: $metafields) {
+            deletedMetafields {
+              ownerId
+              namespace
+              key
+            }
             userErrors {
               field
               message
@@ -45,13 +79,21 @@ const deleteMetafield = {
         }
       `;
 
+      const identifier = {
+        ownerId: lookupData.node.owner.id,
+        namespace: lookupData.node.namespace,
+        key: lookupData.node.key
+      };
+
       const data = (await shopifyClient.request(query, {
-        input: {
-          id: metafieldId
-        }
+        metafields: [identifier]
       })) as {
-        metafieldDelete: {
-          deletedId: string | null;
+        metafieldsDelete: {
+          deletedMetafields: Array<{
+            ownerId: string;
+            namespace: string;
+            key: string;
+          }>;
           userErrors: Array<{
             field: string[];
             message: string;
@@ -59,18 +101,22 @@ const deleteMetafield = {
         };
       };
 
-      if (data.metafieldDelete.userErrors.length > 0) {
+      if (data.metafieldsDelete.userErrors.length > 0) {
         throw new Error(
-          `Failed to delete metafield: ${data.metafieldDelete.userErrors
+          `Failed to delete metafield: ${data.metafieldsDelete.userErrors
             .map((e) => e.message)
             .join(", ")}`
         );
       }
 
+      if (data.metafieldsDelete.deletedMetafields.length === 0) {
+        throw new Error(`Shopify did not confirm deletion of ${metafieldId}`);
+      }
+
       return {
         success: true,
-        deletedId: data.metafieldDelete.deletedId,
-        message: `Metafield ${data.metafieldDelete.deletedId} has been deleted`
+        deletedId: metafieldId,
+        message: `Metafield ${metafieldId} has been deleted`
       };
     } catch (error) {
       console.error("Error deleting metafield:", error);
