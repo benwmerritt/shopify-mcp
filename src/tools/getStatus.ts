@@ -3,6 +3,7 @@ import { gql } from "graphql-request";
 import { z } from "zod";
 
 import { SHOPIFY_API_VERSION } from "../config.js";
+import { parseReadOnlyMode } from "../toolAccess.js";
 
 const GetStatusInputSchema = z.object({});
 
@@ -19,6 +20,14 @@ const getStatus = {
 
   execute: async () => {
     const startTime = Date.now();
+    const readOnlyEnforced = parseReadOnlyMode(
+      process.env.SHOPIFY_MCP_READ_ONLY,
+    );
+    const accessStatus = {
+      accessMode: readOnlyEnforced ? "read-only" : "read-write",
+      readOnlyEnforced,
+      writeToolsExposed: !readOnlyEnforced,
+    };
 
     try {
       const query = gql`
@@ -93,7 +102,8 @@ const getStatus = {
         server: {
           mode: process.env.REMOTE_MCP === "true" ? "remote" : "local",
           apiVersion: SHOPIFY_API_VERSION,
-          configuredDomain: process.env.MYSHOPIFY_DOMAIN || "not set"
+          configuredDomain: process.env.MYSHOPIFY_DOMAIN || "not set",
+          ...accessStatus,
         },
         scopes: {
           granted: scopes,
@@ -109,7 +119,8 @@ const getStatus = {
         server: {
           mode: process.env.REMOTE_MCP === "true" ? "remote" : "local",
           apiVersion: SHOPIFY_API_VERSION,
-          configuredDomain: process.env.MYSHOPIFY_DOMAIN || "not set"
+          configuredDomain: process.env.MYSHOPIFY_DOMAIN || "not set",
+          ...accessStatus,
         }
       };
     }

@@ -25,6 +25,7 @@ A Model Context Protocol (MCP) server that connects agents to the Shopify Admin 
 - URL redirects management
 - OAuth login flow with local token caching
 - Bulk product cleanup utilities
+- Fail-closed read-only mode for audit and QA agents
 
 ## Prerequisites
 
@@ -60,6 +61,28 @@ npm run start:local
 ```
 
 `start:local` uses stdio mode. Remote mode is only enabled with `--remote` or `REMOTE_MCP=true`.
+
+### Read-only mode
+
+Start a capability-restricted server for QA, audit, and reporting agents:
+
+```bash
+shopify-mcp --read-only --domain=<YOUR_SHOP>.myshopify.com
+# or
+SHOPIFY_MCP_READ_ONLY=true npm run start:local
+```
+
+Read-only mode exposes only a reviewed allowlist of lookup and reporting tools.
+All mutating, mixed read/write, file-upload, and unknown future tools are hidden.
+The allowlist is fail-closed, so a newly added tool does not appear in a
+read-only instance until it is explicitly reviewed. `get-status` reports the
+effective access mode, whether the boundary is enforced, and whether write
+tools are exposed.
+
+Use a least-privilege Shopify token as well when one is available. The server
+boundary is designed to remain useful when a deployment must temporarily share
+an existing token: agents connected to the read-only MCP instance cannot call
+the hidden mutation tools.
 
 ## Install + run
 
@@ -208,6 +231,8 @@ MYSHOPIFY_DOMAIN=your-store.myshopify.com
 # SHOPIFY_CLIENT_ID=your_client_id
 # SHOPIFY_CLIENT_SECRET=your_client_secret
 # SHOPIFY_SCOPES=comma,separated,scopes
+# Hide every mutating or unreviewed tool (also available as `--read-only`):
+# SHOPIFY_MCP_READ_ONLY=true
 ```
 
 ## Tool catalog

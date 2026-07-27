@@ -86,6 +86,10 @@ import {
 import { cleanupExpiredUploadSessions, getUploadSession, updateUploadSession } from "./files/uploadSessions.js";
 import { escapeHtml } from "./files/uploadUtils.js";
 import { uploadFileToShopify } from "./files/uploadPipeline.js";
+import {
+  applyToolAccessPolicy,
+  parseReadOnlyMode,
+} from "./toolAccess.js";
 
 // Parse command line arguments
 const argv = minimist(process.argv.slice(2));
@@ -101,6 +105,9 @@ const SHOPIFY_CLIENT_SECRET =
 const OAUTH_SCOPES = argv.scopes || process.env.SHOPIFY_SCOPES;
 const RUN_OAUTH = argv.oauth === true;
 const REMOTE_MODE = argv.remote === true || process.env.REMOTE_MCP === "true";
+const READ_ONLY_MODE = parseReadOnlyMode(
+  argv.readOnly ?? argv["read-only"] ?? process.env.SHOPIFY_MCP_READ_ONLY,
+);
 const PORT = parseInt(process.env.PORT || "3000", 10);
 
 type UploadedFile = {
@@ -125,6 +132,7 @@ async function startServer(accessToken: string, domain: string): Promise<void> {
   // Store in process.env for backwards compatibility
   process.env.SHOPIFY_ACCESS_TOKEN = accessToken;
   process.env.MYSHOPIFY_DOMAIN = domain;
+  process.env.SHOPIFY_MCP_READ_ONLY = READ_ONLY_MODE ? "true" : "false";
 
   // Create Shopify GraphQL client
   const shopifyClient = new GraphQLClient(
@@ -209,11 +217,18 @@ async function startServer(accessToken: string, domain: string): Promise<void> {
   // This is called per-connection in remote mode, once in local mode
   function createMcpServer(): McpServer {
     const server = new McpServer({
-      name: "shopify",
+      name: READ_ONLY_MODE ? "shopify-read-only" : "shopify",
       version: "1.0.0",
-      description:
-        "MCP Server for Shopify API, enabling interaction with store data through GraphQL API",
+      description: READ_ONLY_MODE
+        ? "Read-only MCP Server for Shopify API; mutating tools are not exposed"
+        : "MCP Server for Shopify API, enabling interaction with store data through GraphQL API",
     });
+
+    applyToolAccessPolicy(server, READ_ONLY_MODE);
+
+    if (READ_ONLY_MODE) {
+      console.error("Shopify MCP read-only mode enabled: fail-closed tool allowlist active");
+    }
 
     // Add tools individually, using their schemas directly
 
