@@ -18,7 +18,7 @@ const MetafieldEntrySchema = z.object({
     )
 });
 
-const BulkSetVariantMetafieldsInputSchema = z
+export const BulkSetVariantMetafieldsInputSchema = z
   .object({
     productId: z
       .string()
@@ -40,21 +40,30 @@ const BulkSetVariantMetafieldsInputSchema = z
       ),
     variants: z
       .array(
-        z.object({
-          variantId: z
-            .string()
-            .min(1)
-            .describe("Variant ID (numeric or full GID)"),
-          metafields: z
-            .array(MetafieldEntrySchema)
-            .min(1)
-            .describe("Metafields to set on this specific variant")
-        })
+        z
+          .object({
+            variantId: z
+              .string()
+              .min(1)
+              .describe("Variant ID (numeric or full GID)"),
+            sku: z
+              .string()
+              .optional()
+              .describe("SKU to set on this specific variant"),
+            metafields: z
+              .array(MetafieldEntrySchema)
+              .min(1)
+              .optional()
+              .describe("Metafields to set on this specific variant")
+          })
+          .refine((variant) => variant.sku !== undefined || !!variant.metafields, {
+            message: "Provide at least one of `sku` or `metafields`."
+          })
       )
       .min(1)
       .optional()
       .describe(
-        "PER-VARIANT mode: explicit per-variant metafields (different values per variant). Mutually exclusive with metafields/variantIds."
+        "PER-VARIANT mode: explicit SKU and/or metafields for each variant. Mutually exclusive with metafields/variantIds."
       ),
     allowPartialUpdates: z
       .boolean()
@@ -77,14 +86,17 @@ type BulkSetVariantMetafieldsInput = z.infer<
 
 type MetafieldEntry = z.infer<typeof MetafieldEntrySchema>;
 
+type VariantMetafield = {
+  namespace: string;
+  key: string;
+  value: string;
+  type?: string;
+};
+
 type VariantUpdate = {
   id: string;
-  metafields: Array<{
-    namespace: string;
-    key: string;
-    value: string;
-    type?: string;
-  }>;
+  sku?: string;
+  metafields?: VariantMetafield[];
 };
 
 let shopifyClient: GraphQLClient;
@@ -122,7 +134,7 @@ function cleanMetafields(metafields: MetafieldEntry[]) {
 export function buildUniformUpdates(
   variantIds: string[],
   metafields: MetafieldEntry[]
-): VariantUpdate[] {
+): Array<VariantUpdate & { metafields: VariantMetafield[] }> {
   const cleaned = cleanMetafields(metafields);
   return variantIds.map((id) => ({
     id: normalizeId(id, VARIANT_GID_PREFIX),
@@ -130,14 +142,27 @@ export function buildUniformUpdates(
   }));
 }
 
-// Map explicit per-variant metafields (per-variant mode).
+// Map explicit per-variant SKU and/or metafields (per-variant mode).
 export function buildPerVariantUpdates(
-  variants: Array<{ variantId: string; metafields: MetafieldEntry[] }>
+  variants: Array<{
+    variantId: string;
+    sku?: string;
+    metafields?: MetafieldEntry[];
+  }>
 ): VariantUpdate[] {
-  return variants.map((v) => ({
-    id: normalizeId(v.variantId, VARIANT_GID_PREFIX),
-    metafields: cleanMetafields(v.metafields)
-  }));
+  return variants.map((v) => {
+    if (v.sku === undefined && !v.metafields) {
+      throw new Error(
+        `Variant ${v.variantId} must provide at least one of sku or metafields.`
+      );
+    }
+
+    return {
+      id: normalizeId(v.variantId, VARIANT_GID_PREFIX),
+      ...(v.sku !== undefined ? { sku: v.sku } : {}),
+      ...(v.metafields ? { metafields: cleanMetafields(v.metafields) } : {})
+    };
+  });
 }
 
 const VARIANTS_QUERY = gql`
@@ -216,7 +241,7 @@ async function fetchAllVariantIds(productId: string): Promise<string[]> {
 const bulkSetVariantMetafields = {
   name: "bulk-set-variant-metafields",
   description:
-    "Set metafields across many variants of a single product in one API call (productVariantsBulkUpdate, up to 250 variants per call). UNIFORM mode (pass `metafields`) applies the same values to every variant — the tool auto-discovers the variant IDs, so you only pass the product. PER-VARIANT mode (pass `variants`) applies different values per variant. Far more efficient than calling set-metafield once per variant.",
+    "Set SKU and/or metafields across many variants of a single product in one API call (productVariantsBulkUpdate, up to 250 variants per call). UNIFORM mode (pass `metafields`) applies the same metafields to every variant — the tool auto-discovers the variant IDs, so you only pass the product. PER-VARIANT mode (pass `variants`) applies an SKU and/or different metafields per variant. Far more efficient than calling set-metafield once per variant.",
   schema: BulkSetVariantMetafieldsInputSchema,
 
   initialize(client: GraphQLClient) {
@@ -308,9 +333,9 @@ const bulkSetVariantMetafields = {
         ...(updatedVariantIds.length <= 60 ? { updatedVariantIds } : {})
       };
     } catch (error) {
-      console.error("Error bulk-setting variant metafields:", error);
+      console.error("Error bulk-updating variants:", error);
       throw new Error(
-        `Failed to bulk-set variant metafields: ${
+        `Failed to bulk-update variants: ${
           error instanceof Error ? error.message : String(error)
         }`
       );

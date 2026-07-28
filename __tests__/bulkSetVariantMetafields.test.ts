@@ -1,4 +1,6 @@
 import {
+  BulkSetVariantMetafieldsInputSchema,
+  bulkSetVariantMetafields,
   chunk,
   buildUniformUpdates,
   buildPerVariantUpdates,
@@ -47,6 +49,51 @@ describe("bulk-set-variant-metafields helpers", () => {
       namespace: "custom",
       key: "jet_size",
       value: "142",
+    });
+  });
+
+  it("accepts and maps a SKU-only per-variant update", () => {
+    const input = BulkSetVariantMetafieldsInputSchema.parse({
+      productId: "123",
+      variants: [{ variantId: "456", sku: "021.578" }],
+    });
+
+    expect(buildPerVariantUpdates(input.variants!)).toEqual([
+      {
+        id: "gid://shopify/ProductVariant/456",
+        sku: "021.578",
+      },
+    ]);
+  });
+
+  it("passes a SKU-only update to productVariantsBulkUpdate", async () => {
+    const request = jest.fn().mockResolvedValue({
+      productVariantsBulkUpdate: {
+        productVariants: [{ id: "gid://shopify/ProductVariant/456" }],
+        userErrors: [],
+      },
+    });
+    const input = BulkSetVariantMetafieldsInputSchema.parse({
+      productId: "123",
+      variants: [{ variantId: "456", sku: "021.578" }],
+    });
+
+    bulkSetVariantMetafields.initialize({ request } as any);
+    await bulkSetVariantMetafields.execute(input);
+
+    expect(request).toHaveBeenCalledTimes(1);
+    expect(String(request.mock.calls[0][0])).toContain(
+      "productVariantsBulkUpdate",
+    );
+    expect(request.mock.calls[0][1]).toEqual({
+      productId: "gid://shopify/Product/123",
+      variants: [
+        {
+          id: "gid://shopify/ProductVariant/456",
+          sku: "021.578",
+        },
+      ],
+      allowPartialUpdates: true,
     });
   });
 

@@ -1121,7 +1121,7 @@ async function startServer(accessToken: string, domain: string): Promise<void> {
       },
     );
 
-    // Bulk-set metafields across many variants of one product (one API call)
+    // Bulk-set SKU and/or metafields across variants of one product (one API call)
     server.tool(
       "bulk-set-variant-metafields",
       {
@@ -1167,33 +1167,43 @@ async function startServer(accessToken: string, domain: string): Promise<void> {
           ),
         variants: z
           .array(
-            z.object({
-              variantId: z
-                .string()
-                .min(1)
-                .describe("Variant ID (numeric or full GID)"),
-              metafields: z
-                .array(
-                  z.object({
-                    namespace: z.string().min(1).describe("Metafield namespace"),
-                    key: z.string().min(1).describe("Metafield key"),
-                    value: z.string().describe("Value as a string"),
-                    type: z
-                      .string()
-                      .optional()
-                      .describe(
-                        "Metafield type. Omit to inherit the field's definition type.",
-                      ),
-                  }),
-                )
-                .min(1)
-                .describe("Metafields to set on this specific variant"),
-            }),
+            z
+              .object({
+                variantId: z
+                  .string()
+                  .min(1)
+                  .describe("Variant ID (numeric or full GID)"),
+                sku: z
+                  .string()
+                  .optional()
+                  .describe("SKU to set on this specific variant"),
+                metafields: z
+                  .array(
+                    z.object({
+                      namespace: z.string().min(1).describe("Metafield namespace"),
+                      key: z.string().min(1).describe("Metafield key"),
+                      value: z.string().describe("Value as a string"),
+                      type: z
+                        .string()
+                        .optional()
+                        .describe(
+                          "Metafield type. Omit to inherit the field's definition type.",
+                        ),
+                    }),
+                  )
+                  .min(1)
+                  .optional()
+                  .describe("Metafields to set on this specific variant"),
+              })
+              .refine(
+                (variant) => variant.sku !== undefined || !!variant.metafields,
+                { message: "Provide at least one of `sku` or `metafields`." },
+              ),
           )
           .min(1)
           .optional()
           .describe(
-            "PER-VARIANT mode: explicit per-variant metafields (different values per variant). Mutually exclusive with metafields/variantIds.",
+            "PER-VARIANT mode: explicit SKU and/or metafields for each variant. Mutually exclusive with metafields/variantIds.",
           ),
         allowPartialUpdates: z
           .boolean()
