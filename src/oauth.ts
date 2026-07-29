@@ -63,10 +63,139 @@ export interface TokenData {
   access_token: string;
   scope: string;
   obtained_at: string;
+  expires_at?: string;
+  grant_type?: "client_credentials";
+  client_id?: string;
 }
 
 interface TokenStore {
   [domain: string]: TokenData;
+}
+
+type FetchLike = typeof fetch;
+
+type ClientCredentialsDependencies = {
+  fetchImpl?: FetchLike;
+  now?: () => number;
+  loadToken?: (domain: string) => TokenData | null;
+  saveToken?: (domain: string, token: TokenData) => void;
+  refreshSkewMs?: number;
+};
+
+export async function acquireClientCredentialsToken(
+  domain: string,
+  clientId: string,
+  clientSecret: string,
+  dependencies: Pick<ClientCredentialsDependencies, "fetchImpl" | "now"> = {},
+): Promise<TokenData> {
+  const fetchImpl = dependencies.fetchImpl ?? globalThis.fetch;
+  const now = dependencies.now ?? Date.now;
+  const obtainedAtMs = now();
+  const response = await fetchImpl(
+    `https://${domain}/admin/oauth/access_token`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
+      body: JSON.stringify({
+        client_id: clientId,
+        client_secret: clientSecret,
+        grant_type: "client_credentials",
+      }),
+    },
+  );
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(
+      `Failed to acquire client-credentials token: ${response.status} ${errorText}`,
+    );
+  }
+
+  const data = (await response.json()) as {
+    access_token?: string;
+    scope?: string;
+    expires_in?: number;
+  };
+  if (!data.access_token || !data.expires_in || data.expires_in <= 0) {
+    throw new Error("Shopify returned an invalid client-credentials token response");
+  }
+
+  return {
+    access_token: data.access_token,
+    scope: data.scope ?? "",
+    obtained_at: new Date(obtainedAtMs).toISOString(),
+    expires_at: new Date(obtainedAtMs + data.expires_in * 1000).toISOString(),
+    grant_type: "client_credentials",
+    client_id: clientId,
+  };
+}
+
+export function createClientCredentialsTokenProvider(
+  domain: string,
+  clientId: string,
+  clientSecret: string,
+  dependencies: ClientCredentialsDependencies = {},
+): () => Promise<string> {
+  const fetchImpl = dependencies.fetchImpl ?? globalThis.fetch;
+  const now = dependencies.now ?? Date.now;
+  const loadTokenImpl = dependencies.loadToken ?? loadToken;
+  const saveTokenImpl = dependencies.saveToken ?? saveToken;
+  const refreshSkewMs = dependencies.refreshSkewMs ?? 5 * 60 * 1000;
+  let currentToken = loadTokenImpl(domain);
+  let refreshInFlight: Promise<string> | null = null;
+
+  const isReusable = (token: TokenData | null): token is TokenData => {
+    if (
+      !token ||
+      token.grant_type !== "client_credentials" ||
+      token.client_id !== clientId ||
+      !token.expires_at
+    ) {
+      return false;
+    }
+
+    const expiresAt = Date.parse(token.expires_at);
+    return Number.isFinite(expiresAt) && expiresAt - now() > refreshSkewMs;
+  };
+
+  return async (): Promise<string> => {
+    if (isReusable(currentToken)) {
+      return currentToken.access_token;
+    }
+
+    if (!refreshInFlight) {
+      refreshInFlight = acquireClientCredentialsToken(
+        domain,
+        clientId,
+        clientSecret,
+        { fetchImpl, now },
+      )
+        .then((token) => {
+          currentToken = token;
+          saveTokenImpl(domain, token);
+          return token.access_token;
+        })
+        .finally(() => {
+          refreshInFlight = null;
+        });
+    }
+
+    return refreshInFlight;
+  };
+}
+
+export function createAuthenticatedFetch(
+  getAccessToken: () => Promise<string>,
+  fetchImpl: FetchLike = globalThis.fetch,
+): FetchLike {
+  return async (input, init = {}) => {
+    const headers = new Headers(init.headers);
+    headers.set("X-Shopify-Access-Token", await getAccessToken());
+    return fetchImpl(input, { ...init, headers });
+  };
 }
 
 /**

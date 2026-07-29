@@ -51,7 +51,9 @@ cp .env.example .env
 
 Set at least:
 - `MYSHOPIFY_DOMAIN=your-store.myshopify.com`
-- `SHOPIFY_ACCESS_TOKEN=shpat_xxx`
+- Either:
+  - `SHOPIFY_CLIENT_ID=...` and `SHOPIFY_CLIENT_SECRET=...` for a Dev Dashboard app owned by the store's organization; or
+  - `SHOPIFY_ACCESS_TOKEN=shpat_xxx` for a static/manual token
 - `REMOTE_MCP=false`
 
 3. Start local MCP (stdio):
@@ -86,7 +88,28 @@ the hidden mutation tools.
 
 ## Install + run
 
-### OAuth flow (recommended)
+### Client credentials (same Shopify organization)
+
+For a Dev Dashboard app installed on a store owned by the same Shopify
+organization, configure:
+
+```bash
+MYSHOPIFY_DOMAIN=your-store.myshopify.com
+SHOPIFY_CLIENT_ID=your-client-id
+SHOPIFY_CLIENT_SECRET=your-client-secret
+```
+
+No callback URL or browser consent is required. The MCP obtains Shopify's
+24-hour access token at startup, caches it per permanent MyShopify domain in
+`~/.shopify-mcp/tokens.json`, and renews it automatically before expiry.
+Cached tokens include the client ID so a token created by a different app is
+never silently reused after an app cutover.
+
+Shopify does not allow this grant for public or custom-distribution apps on
+stores owned by another organization; use the authorization-code flow below
+for those apps.
+
+### Authorization-code OAuth
 
 1. Create a custom app and copy **Client ID** and **Client Secret**.
 2. In **App setup**, set **App URL** and **Allowed redirection URLs** to:

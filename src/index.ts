@@ -76,7 +76,12 @@ import { attachFileToProduct } from "./tools/attachFileToProduct.js";
 import { detachFileFromProduct } from "./tools/detachFileFromProduct.js";
 
 // Import OAuth helpers
-import { runOAuthFlow, loadToken } from "./oauth.js";
+import {
+  createAuthenticatedFetch,
+  createClientCredentialsTokenProvider,
+  loadToken,
+  runOAuthFlow,
+} from "./oauth.js";
 import {
   SHOPIFY_API_VERSION,
   SHOPIFY_FILE_UPLOAD_MAX_BYTES,
@@ -125,22 +130,30 @@ function isMulterLimitError(error: unknown): error is { code: string } {
   );
 }
 
+type AccessTokenProvider = () => Promise<string>;
+
 /**
- * Start the MCP server with the given access token
+ * Start the MCP server with an access-token provider. Client-credentials
+ * providers renew Shopify's 24-hour tokens before they expire.
  */
-async function startServer(accessToken: string, domain: string): Promise<void> {
-  // Store in process.env for backwards compatibility
-  process.env.SHOPIFY_ACCESS_TOKEN = accessToken;
+async function startServer(
+  getAccessToken: AccessTokenProvider,
+  domain: string,
+): Promise<void> {
+  const initialAccessToken = await getAccessToken();
+
+  // Store the initial value in process.env for backwards compatibility.
+  process.env.SHOPIFY_ACCESS_TOKEN = initialAccessToken;
   process.env.MYSHOPIFY_DOMAIN = domain;
   process.env.SHOPIFY_MCP_READ_ONLY = READ_ONLY_MODE ? "true" : "false";
 
-  // Create Shopify GraphQL client
+  // Create Shopify GraphQL client. The fetch wrapper asks the provider for the
+  // current token on every request, so long-running MCP processes renew safely.
   const shopifyClient = new GraphQLClient(
     `https://${domain}/admin/api/${SHOPIFY_API_VERSION}/graphql.json`,
     {
-      fetch: globalThis.fetch,
+      fetch: createAuthenticatedFetch(getAccessToken),
       headers: {
-        "X-Shopify-Access-Token": accessToken,
         "Content-Type": "application/json",
       },
     },
@@ -2684,50 +2697,52 @@ async function main(): Promise<void> {
   }
 
   // Normal MCP server mode
-  let accessToken = argv.accessToken || process.env.SHOPIFY_ACCESS_TOKEN;
+  if (!MYSHOPIFY_DOMAIN) {
+    console.error("Error: MYSHOPIFY_DOMAIN is required.");
+    console.error("Please provide it via command line argument or environment.");
+    console.error("  Command line: --domain=your-store.myshopify.com");
+    process.exit(1);
+  }
 
-  // If no access token provided, try to load from saved tokens
-  if (!accessToken && MYSHOPIFY_DOMAIN) {
+  const explicitAccessToken =
+    argv.accessToken || process.env.SHOPIFY_ACCESS_TOKEN;
+  let getAccessToken: AccessTokenProvider | null = null;
+
+  if (explicitAccessToken) {
+    getAccessToken = async () => explicitAccessToken;
+  } else if (SHOPIFY_CLIENT_ID && SHOPIFY_CLIENT_SECRET) {
+    getAccessToken = createClientCredentialsTokenProvider(
+      MYSHOPIFY_DOMAIN,
+      SHOPIFY_CLIENT_ID,
+      SHOPIFY_CLIENT_SECRET,
+    );
+    console.error(
+      `Using renewable client-credentials authentication for ${MYSHOPIFY_DOMAIN}`,
+    );
+  } else if (SHOPIFY_CLIENT_ID || SHOPIFY_CLIENT_SECRET) {
+    console.error(
+      "Error: Both SHOPIFY_CLIENT_ID and SHOPIFY_CLIENT_SECRET are required for client-credentials authentication.",
+    );
+    process.exit(1);
+  } else {
     const savedToken = loadToken(MYSHOPIFY_DOMAIN);
     if (savedToken) {
-      accessToken = savedToken.access_token;
+      getAccessToken = async () => savedToken.access_token;
       console.error(
         `Using saved token for ${MYSHOPIFY_DOMAIN} (obtained: ${savedToken.obtained_at})`,
       );
     }
   }
 
-  // If still no token but we have client credentials, suggest OAuth
-  if (!accessToken && SHOPIFY_CLIENT_ID && SHOPIFY_CLIENT_SECRET) {
-    console.error("Error: No access token found.");
-    console.error("Run with --oauth to authorize and obtain an access token:");
+  if (!getAccessToken) {
+    console.error("Error: Shopify authentication is required.");
     console.error(
-      `  npx shopify-mcp --oauth --domain=${MYSHOPIFY_DOMAIN || "your-store.myshopify.com"}`,
+      "Provide SHOPIFY_CLIENT_ID and SHOPIFY_CLIENT_SECRET, an explicit access token, or run the authorization-code flow.",
     );
     process.exit(1);
   }
 
-  // Validate required configuration
-  if (!accessToken) {
-    console.error("Error: SHOPIFY_ACCESS_TOKEN is required.");
-    console.error(
-      "Please provide it via command line argument, .env file, or run OAuth flow.",
-    );
-    console.error("  Command line: --accessToken=your_token");
-    console.error(
-      "  OAuth flow:   --oauth --domain=your-store.myshopify.com --clientId=xxx --clientSecret=xxx",
-    );
-    process.exit(1);
-  }
-
-  if (!MYSHOPIFY_DOMAIN) {
-    console.error("Error: MYSHOPIFY_DOMAIN is required.");
-    console.error("Please provide it via command line argument or .env file.");
-    console.error("  Command line: --domain=your-store.myshopify.com");
-    process.exit(1);
-  }
-
-  await startServer(accessToken, MYSHOPIFY_DOMAIN);
+  await startServer(getAccessToken, MYSHOPIFY_DOMAIN);
 }
 
 // Run main
