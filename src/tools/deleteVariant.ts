@@ -33,10 +33,29 @@ const deleteVariant = {
     try {
       const variantId = normalizeVariantId(input.variantId);
 
+      // productVariantDelete was removed from newer Admin API versions;
+      // productVariantsBulkDelete requires the productId, so resolve it first.
+      const lookup = gql`
+        query variantProduct($id: ID!) {
+          productVariant(id: $id) {
+            id
+            product {
+              id
+            }
+          }
+        }
+      `;
+      const found = (await shopifyClient.request(lookup, { id: variantId })) as {
+        productVariant: { id: string; product: { id: string } } | null;
+      };
+      if (!found.productVariant) {
+        throw new Error(`Variant not found: ${variantId}`);
+      }
+      const productId = found.productVariant.product.id;
+
       const query = gql`
-        mutation productVariantDelete($id: ID!) {
-          productVariantDelete(id: $id) {
-            deletedProductVariantId
+        mutation productVariantsBulkDelete($productId: ID!, $variantsIds: [ID!]!) {
+          productVariantsBulkDelete(productId: $productId, variantsIds: $variantsIds) {
             product {
               id
               title
@@ -52,13 +71,11 @@ const deleteVariant = {
         }
       `;
 
-      const variables = {
-        id: variantId
-      };
-
-      const data = (await shopifyClient.request(query, variables)) as {
-        productVariantDelete: {
-          deletedProductVariantId: string | null;
+      const data = (await shopifyClient.request(query, {
+        productId,
+        variantsIds: [variantId],
+      })) as {
+        productVariantsBulkDelete: {
           product: {
             id: string;
             title: string;
@@ -71,24 +88,26 @@ const deleteVariant = {
         };
       };
 
-      // Check for errors
-      if (data.productVariantDelete.userErrors.length > 0) {
+      // Check for errors (the outer catch adds the "Failed to delete variant" prefix)
+      if (data.productVariantsBulkDelete.userErrors.length > 0) {
         throw new Error(
-          `Failed to delete variant: ${data.productVariantDelete.userErrors
-            .map((e) => `${e.field.join(".")}: ${e.message}`)
-            .join(", ")}`
+          data.productVariantsBulkDelete.userErrors
+            .map((e) => `${(e.field || []).join(".")}: ${e.message}`)
+            .join(", ")
         );
       }
 
       return {
         success: true,
-        deletedVariantId: data.productVariantDelete.deletedProductVariantId,
-        product: data.productVariantDelete.product ? {
-          id: data.productVariantDelete.product.id,
-          title: data.productVariantDelete.product.title,
-          remainingVariants: data.productVariantDelete.product.variantsCount.count
+        // The bulk payload has no deleted-IDs field, so this echoes the input;
+        // empty userErrors is the success signal.
+        deletedVariantId: variantId,
+        product: data.productVariantsBulkDelete.product ? {
+          id: data.productVariantsBulkDelete.product.id,
+          title: data.productVariantsBulkDelete.product.title,
+          remainingVariants: data.productVariantsBulkDelete.product.variantsCount.count
         } : null,
-        message: `Variant ${data.productVariantDelete.deletedProductVariantId} has been deleted`
+        message: `Variant ${variantId} has been deleted`
       };
     } catch (error) {
       console.error("Error deleting variant:", error);
