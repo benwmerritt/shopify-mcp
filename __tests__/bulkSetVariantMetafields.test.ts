@@ -61,7 +61,7 @@ describe("bulk-set-variant-metafields helpers", () => {
     expect(buildPerVariantUpdates(input.variants!)).toEqual([
       {
         id: "gid://shopify/ProductVariant/456",
-        sku: "021.578",
+        inventoryItem: { sku: "021.578" },
       },
     ]);
   });
@@ -90,7 +90,7 @@ describe("bulk-set-variant-metafields helpers", () => {
       variants: [
         {
           id: "gid://shopify/ProductVariant/456",
-          sku: "021.578",
+          inventoryItem: { sku: "021.578" },
         },
       ],
       allowPartialUpdates: true,

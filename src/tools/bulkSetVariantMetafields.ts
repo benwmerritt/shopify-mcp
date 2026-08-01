@@ -95,7 +95,7 @@ type VariantMetafield = {
 
 type VariantUpdate = {
   id: string;
-  sku?: string;
+  inventoryItem?: { sku: string };
   metafields?: VariantMetafield[];
 };
 
@@ -159,7 +159,7 @@ export function buildPerVariantUpdates(
 
     return {
       id: normalizeId(v.variantId, VARIANT_GID_PREFIX),
-      ...(v.sku !== undefined ? { sku: v.sku } : {}),
+      ...(v.sku !== undefined ? { inventoryItem: { sku: v.sku } } : {}),
       ...(v.metafields ? { metafields: cleanMetafields(v.metafields) } : {})
     };
   });
