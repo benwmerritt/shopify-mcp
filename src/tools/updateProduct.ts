@@ -26,6 +26,10 @@ const UpdateProductInputSchema = z.object({
 
   // Basic product fields (all optional)
   title: z.string().optional(),
+  handle: z.string().min(1).optional(),
+  redirectNewHandle: z.boolean().optional().describe(
+    "When changing handle, create Shopify's native redirect from the previous handle",
+  ),
   descriptionHtml: z.string().optional(),
   vendor: z.string().optional(),
   productType: z.string().optional(),
@@ -111,6 +115,71 @@ const updateProduct = {
   execute: async (input: UpdateProductInput) => {
     try {
       const productId = normalizeProductId(input.id);
+
+      // productSet accepts handles but has no redirectNewHandle argument. Route
+      // the narrow handle+redirect operation through productUpdate so the URL
+      // redirect is atomic with the rename and does not require a separate
+      // write_online_store_navigation mutation.
+      if (input.handle !== undefined && input.redirectNewHandle === true) {
+        const otherChanges =
+          input.title !== undefined || input.descriptionHtml !== undefined ||
+          input.vendor !== undefined || input.productType !== undefined ||
+          input.category !== undefined || input.tags !== undefined ||
+          input.status !== undefined || input.price !== undefined ||
+          input.compareAtPrice !== undefined || input.sku !== undefined ||
+          input.barcode !== undefined || input.variants !== undefined ||
+          input.images !== undefined;
+        if (otherChanges) {
+          throw new Error("Handle+redirect updates must be submitted alone");
+        }
+        const handleQuery = gql`
+          mutation productUpdateHandle($product: ProductUpdateInput!) {
+            productUpdate(product: $product) {
+              product {
+                id title handle descriptionHtml vendor productType status tags updatedAt
+                category { id name fullName }
+                variants(first: 100) {
+                  edges { node { id title price compareAtPrice sku barcode } }
+                }
+                images(first: 20) {
+                  edges { node { id url altText width height } }
+                }
+              }
+              userErrors { field message }
+            }
+          }
+        `;
+        const handleData = (await shopifyClient.request(handleQuery, {
+          product: {
+            id: productId,
+            handle: input.handle,
+            redirectNewHandle: true,
+          },
+        })) as {
+          productUpdate: {
+            product: null | {
+              variants: { edges: Array<{ node: Record<string, unknown> }> };
+              images: { edges: Array<{ node: Record<string, unknown> }> };
+              [key: string]: unknown;
+            };
+            userErrors: Array<{ field: string[]; message: string }>;
+          };
+        };
+        if (handleData.productUpdate.userErrors.length > 0) {
+          throw new Error(handleData.productUpdate.userErrors
+            .map((e) => `${e.field.join(".")}: ${e.message}`).join(", "));
+        }
+        const product = handleData.productUpdate.product;
+        if (!product) throw new Error("Product handle update returned no product");
+        return {
+          product: {
+            ...product,
+            variants: product.variants.edges.map((e) => e.node),
+            images: product.images.edges.map((e) => e.node),
+          },
+          redirectNewHandle: true,
+        };
+      }
 
       // First, fetch the product to get current variant IDs/options if needed
       let firstVariantId: string | null = null;
@@ -221,6 +290,7 @@ const updateProduct = {
 
       // Add basic fields if provided
       if (input.title !== undefined) productInput.title = input.title;
+      if (input.handle !== undefined) productInput.handle = input.handle;
       if (input.descriptionHtml !== undefined) productInput.descriptionHtml = input.descriptionHtml;
       if (input.vendor !== undefined) productInput.vendor = input.vendor;
       if (input.productType !== undefined) productInput.productType = input.productType;
@@ -267,6 +337,7 @@ const updateProduct = {
 
       const hasProductLevelChanges =
         input.title !== undefined ||
+        input.handle !== undefined ||
         input.descriptionHtml !== undefined ||
         input.vendor !== undefined ||
         input.productType !== undefined ||

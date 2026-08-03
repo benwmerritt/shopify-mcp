@@ -118,3 +118,45 @@ describe("update-product variant-only updates", () => {
     expect(result.product.variants[0].sku).toBe("018.568");
   });
 });
+
+describe("update-product handle updates", () => {
+  it("uses productUpdate with an atomic native redirect and no unrelated fields", async () => {
+    const request = jest.fn().mockResolvedValueOnce({
+      productUpdate: {
+        product: {
+          id: "gid://shopify/Product/123",
+          title: "Keihin Float Bowl Screw",
+          handle: "keihin-float-bowl-screw-n114-04160",
+          descriptionHtml: "<p>Float bowl screw.</p>",
+          vendor: "Keihin",
+          productType: "Carburetor Part",
+          category: null,
+          status: "DRAFT",
+          tags: ["hermes", "needs-review"],
+          variants: { edges: [] },
+          images: { edges: [] },
+        },
+        userErrors: [],
+      },
+    });
+
+    updateProduct.initialize({ request } as any);
+    const result = await updateProduct.execute({
+      id: "123",
+      handle: "keihin-float-bowl-screw-n114-04160",
+      redirectNewHandle: true,
+    });
+
+    expect(request).toHaveBeenCalledTimes(1);
+    expect(String(request.mock.calls[0][0])).toContain("productUpdate");
+    expect(request.mock.calls[0][1]).toEqual({
+      product: {
+        id: "gid://shopify/Product/123",
+        handle: "keihin-float-bowl-screw-n114-04160",
+        redirectNewHandle: true,
+      },
+    });
+    expect(result.product.handle).toBe("keihin-float-bowl-screw-n114-04160");
+    expect(result.redirectNewHandle).toBe(true);
+  });
+});

@@ -529,6 +529,10 @@ async function startServer(
 
         // Basic product fields (all optional)
         title: z.string().optional(),
+        handle: z.string().min(1).optional(),
+        redirectNewHandle: z.boolean().optional().describe(
+          "When changing handle, create Shopify's native redirect from the previous handle",
+        ),
         descriptionHtml: z.string().optional(),
         vendor: z.string().optional(),
         productType: z.string().optional(),
