@@ -52,6 +52,7 @@ describe("read-only MCP server integration", () => {
 
     const mutationTools = [
       "update-product",
+      "update-inventory-item-customs",
       "update-metaobject",
       "delete-product",
       "set-metafield",

@@ -42,6 +42,14 @@ export const READ_ONLY_TOOL_NAMES = new Set([
   "find-products-by-metafield",
 ]);
 
+/**
+ * Sensitive write tools called out explicitly in addition to the fail-closed
+ * read allowlist. A tool listed in both sets is always treated as a write.
+ */
+export const WRITE_TOOL_NAMES = new Set([
+  "update-inventory-item-customs",
+]);
+
 export function parseReadOnlyMode(value: unknown): boolean {
   if (value === true) {
     return true;
@@ -75,7 +83,7 @@ export function applyToolAccessPolicy<T extends ToolServer>(
 
     const registerTool = (registrar as ToolRegistrar).bind(server);
     server[key] = ((name: string, ...args: unknown[]) => {
-      if (!READ_ONLY_TOOL_NAMES.has(name)) {
+      if (WRITE_TOOL_NAMES.has(name) || !READ_ONLY_TOOL_NAMES.has(name)) {
         return undefined;
       }
 

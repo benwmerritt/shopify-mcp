@@ -40,6 +40,7 @@ import { updateCollection } from "./tools/updateCollection.js";
 import { deleteCollection } from "./tools/deleteCollection.js";
 import { getInventoryLevels } from "./tools/getInventoryLevels.js";
 import { updateInventory } from "./tools/updateInventory.js";
+import { updateInventoryItemCustoms } from "./tools/updateInventoryItemCustoms.js";
 import { getMetafields } from "./tools/getMetafields.js";
 import { deleteMetafield } from "./tools/deleteMetafield.js";
 import { setMetafield } from "./tools/setMetafield.js";
@@ -182,6 +183,7 @@ async function startServer(
   deleteCollection.initialize(shopifyClient);
   getInventoryLevels.initialize(shopifyClient);
   updateInventory.initialize(shopifyClient);
+  updateInventoryItemCustoms.initialize(shopifyClient);
   getMetafields.initialize(shopifyClient);
   deleteMetafield.initialize(shopifyClient);
   setMetafield.initialize(shopifyClient);
@@ -977,6 +979,42 @@ async function startServer(
       },
       async (args) => {
         const result = await updateInventory.execute(args);
+        return {
+          content: [{ type: "text", text: JSON.stringify(result) }],
+        };
+      },
+    );
+
+    server.tool(
+      "update-inventory-item-customs",
+      {
+        inventoryItemId: z
+          .string()
+          .refine(
+            (value) =>
+              /^\d+$/.test(value) ||
+              /^gid:\/\/shopify\/InventoryItem\/\d+$/.test(value),
+            "Inventory item ID must be numeric or a Shopify InventoryItem GID",
+          )
+          .describe("Inventory item ID (numeric or full Shopify InventoryItem GID)"),
+        countryCodeOfOrigin: z
+          .string()
+          .regex(/^[A-Z]{2}$/)
+          .optional()
+          .describe("Uppercase ISO alpha-2 country code of origin"),
+        provinceCodeOfOrigin: z
+          .string()
+          .min(1)
+          .optional()
+          .describe("Province or state code of origin"),
+        harmonizedSystemCode: z
+          .string()
+          .regex(/^\d{6,}$/)
+          .optional()
+          .describe("Harmonized system code (at least six digits)"),
+      },
+      async (args) => {
+        const result = await updateInventoryItemCustoms.execute(args);
         return {
           content: [{ type: "text", text: JSON.stringify(result) }],
         };
