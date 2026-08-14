@@ -76,6 +76,8 @@ describe("Shopify MCP read-only mode", () => {
   it("keeps mixed read/write tools out of the read-only allowlist", () => {
     expect(WRITE_TOOL_NAMES.has("update-inventory-item-customs")).toBe(true);
     expect(READ_ONLY_TOOL_NAMES.has("update-inventory-item-customs")).toBe(false);
+    expect(WRITE_TOOL_NAMES.has("update-inventory-item-shipping")).toBe(true);
+    expect(READ_ONLY_TOOL_NAMES.has("update-inventory-item-shipping")).toBe(false);
     expect(READ_ONLY_TOOL_NAMES.has("manage-collection-products")).toBe(false);
     expect(READ_ONLY_TOOL_NAMES.has("create-file-upload-session")).toBe(false);
     expect(READ_ONLY_TOOL_NAMES.has("attach-file-to-product")).toBe(false);

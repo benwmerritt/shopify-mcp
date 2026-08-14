@@ -41,6 +41,10 @@ import { deleteCollection } from "./tools/deleteCollection.js";
 import { getInventoryLevels } from "./tools/getInventoryLevels.js";
 import { updateInventory } from "./tools/updateInventory.js";
 import { updateInventoryItemCustoms } from "./tools/updateInventoryItemCustoms.js";
+import {
+  SHOPIFY_WEIGHT_UNITS,
+  updateInventoryItemShipping,
+} from "./tools/updateInventoryItemShipping.js";
 import { getMetafields } from "./tools/getMetafields.js";
 import { deleteMetafield } from "./tools/deleteMetafield.js";
 import { setMetafield } from "./tools/setMetafield.js";
@@ -184,6 +188,7 @@ async function startServer(
   getInventoryLevels.initialize(shopifyClient);
   updateInventory.initialize(shopifyClient);
   updateInventoryItemCustoms.initialize(shopifyClient);
+  updateInventoryItemShipping.initialize(shopifyClient);
   getMetafields.initialize(shopifyClient);
   deleteMetafield.initialize(shopifyClient);
   setMetafield.initialize(shopifyClient);
@@ -1015,6 +1020,41 @@ async function startServer(
       },
       async (args) => {
         const result = await updateInventoryItemCustoms.execute(args);
+        return {
+          content: [{ type: "text", text: JSON.stringify(result) }],
+        };
+      },
+    );
+
+    server.tool(
+      "update-inventory-item-shipping",
+      {
+        inventoryItemId: z
+          .string()
+          .refine(
+            (value) =>
+              /^\d+$/.test(value) ||
+              /^gid:\/\/shopify\/InventoryItem\/\d+$/.test(value),
+            "Inventory item ID must be numeric or a Shopify InventoryItem GID",
+          )
+          .describe("Inventory item ID (numeric or full Shopify InventoryItem GID)"),
+        weightValue: z
+          .number()
+          .finite()
+          .positive()
+          .optional()
+          .describe("Positive native inventory-item weight value"),
+        weightUnit: z
+          .enum(SHOPIFY_WEIGHT_UNITS)
+          .optional()
+          .describe("Shopify weight unit"),
+        requiresShipping: z
+          .boolean()
+          .optional()
+          .describe("Whether the inventory item requires shipping"),
+      },
+      async (args) => {
+        const result = await updateInventoryItemShipping.execute(args);
         return {
           content: [{ type: "text", text: JSON.stringify(result) }],
         };

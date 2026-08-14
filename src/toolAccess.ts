@@ -48,6 +48,7 @@ export const READ_ONLY_TOOL_NAMES = new Set([
  */
 export const WRITE_TOOL_NAMES = new Set([
   "update-inventory-item-customs",
+  "update-inventory-item-shipping",
 ]);
 
 export function parseReadOnlyMode(value: unknown): boolean {
