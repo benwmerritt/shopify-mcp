@@ -47,6 +47,7 @@ export const READ_ONLY_TOOL_NAMES = new Set([
  * read allowlist. A tool listed in both sets is always treated as a write.
  */
 export const WRITE_TOOL_NAMES = new Set([
+  "update-metaobject-definition",
   "update-inventory-item-customs",
   "update-inventory-item-shipping",
 ]);

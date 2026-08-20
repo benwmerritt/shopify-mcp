@@ -32,6 +32,7 @@ describe("Shopify MCP read-only mode", () => {
     );
     expect(server.tool("update-product")).toBeUndefined();
     expect(server.tool("update-metaobject")).toBeUndefined();
+    expect(server.tool("update-metaobject-definition")).toBeUndefined();
     expect(register.mock.calls.map(([name]) => name)).toEqual([
       "products",
       "list-metaobjects",
@@ -74,6 +75,7 @@ describe("Shopify MCP read-only mode", () => {
   });
 
   it("keeps mixed read/write tools out of the read-only allowlist", () => {
+    expect(WRITE_TOOL_NAMES.has("update-metaobject-definition")).toBe(true);
     expect(WRITE_TOOL_NAMES.has("update-inventory-item-customs")).toBe(true);
     expect(READ_ONLY_TOOL_NAMES.has("update-inventory-item-customs")).toBe(false);
     expect(WRITE_TOOL_NAMES.has("update-inventory-item-shipping")).toBe(true);

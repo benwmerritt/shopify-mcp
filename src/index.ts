@@ -57,6 +57,7 @@ import { listMetaobjects } from "./tools/listMetaobjects.js";
 import { getMetaobject } from "./tools/getMetaobject.js";
 import { listMetaobjectDefinitions } from "./tools/listMetaobjectDefinitions.js";
 import { getMetaobjectDefinition } from "./tools/getMetaobjectDefinition.js";
+import { updateMetaobjectDefinition } from "./tools/updateMetaobjectDefinition.js";
 import { getLocations } from "./tools/getLocations.js";
 import { createDraftOrder } from "./tools/createDraftOrder.js";
 import { updateDraftOrder } from "./tools/updateDraftOrder.js";
@@ -201,6 +202,7 @@ async function startServer(
   getMetaobject.initialize(shopifyClient);
   listMetaobjectDefinitions.initialize(shopifyClient);
   getMetaobjectDefinition.initialize(shopifyClient);
+  updateMetaobjectDefinition.initialize(shopifyClient);
   getLocations.initialize(shopifyClient);
   draftOrders.initialize(shopifyClient);
   createDraftOrder.initialize(shopifyClient);
@@ -1430,6 +1432,34 @@ async function startServer(
       },
       async (args) => {
         const result = await getMetaobjectDefinition.execute(args);
+        return {
+          content: [{ type: "text", text: JSON.stringify(result) }],
+        };
+      },
+    );
+
+    // Add fields to an existing metaobject definition (additive-only)
+    server.tool(
+      "update-metaobject-definition",
+      {
+        id: z.string().min(1).describe("Metaobject definition global ID"),
+        fields: z
+          .array(
+            z.object({
+              key: z.string().min(2).max(64).regex(/^[a-zA-Z0-9_-]+$/),
+              name: z.string().min(1).optional(),
+              description: z.string().optional(),
+              type: z.string().min(1),
+              required: z.boolean().optional(),
+              validations: z
+                .array(z.object({ name: z.string().min(1), value: z.string() }))
+                .optional(),
+            }),
+          )
+          .min(1),
+      },
+      async (args) => {
+        const result = await updateMetaobjectDefinition.execute(args);
         return {
           content: [{ type: "text", text: JSON.stringify(result) }],
         };
