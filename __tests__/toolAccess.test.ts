@@ -75,6 +75,8 @@ describe("Shopify MCP read-only mode", () => {
   });
 
   it("keeps mixed read/write tools out of the read-only allowlist", () => {
+    expect(WRITE_TOOL_NAMES.has("create-metafield-definition")).toBe(true);
+    expect(READ_ONLY_TOOL_NAMES.has("create-metafield-definition")).toBe(false);
     expect(WRITE_TOOL_NAMES.has("update-metaobject-definition")).toBe(true);
     expect(WRITE_TOOL_NAMES.has("update-inventory-item-customs")).toBe(true);
     expect(READ_ONLY_TOOL_NAMES.has("update-inventory-item-customs")).toBe(false);

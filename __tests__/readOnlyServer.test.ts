@@ -56,6 +56,7 @@ describe("read-only MCP server integration", () => {
       "update-inventory-item-shipping",
       "update-metaobject",
       "update-metaobject-definition",
+      "create-metafield-definition",
       "delete-product",
       "set-metafield",
       "upload-local-file",
