@@ -11,6 +11,10 @@ const VariantUpdateSchema = z.object({
   sku: z.string().optional(),
   barcode: z.string().optional(),
   options: z.array(z.string()).optional(),
+  optionValues: z.array(z.object({
+    optionName: z.string().min(1),
+    name: z.string().min(1),
+  })).optional(),
 });
 
 // Image schema
@@ -20,7 +24,7 @@ const ImageSchema = z.object({
 });
 
 // Update product input schema
-const UpdateProductInputSchema = z.object({
+export const UpdateProductInputSchema = z.object({
   // REQUIRED - product ID
   id: z.string().min(1),
 
@@ -333,6 +337,82 @@ const updateProduct = {
 
       if (variantsToUpdate.length > 0) {
         productInput.variants = variantsToUpdate;
+      }
+
+      // New variants must use the purpose-built bulk-create mutation. The
+      // public ProductSetInput schema does not expose variants[].optionValues
+      // for additional variants on API 2026-01.
+      const variantsToCreate = (input.variants ?? []).filter(
+        (variant) => !variant.id && variant.optionValues !== undefined,
+      );
+      if (variantsToCreate.length > 0) {
+        if (variantsToCreate.length !== (input.variants ?? []).length) {
+          throw new Error("New variants with optionValues cannot be mixed with variant updates");
+        }
+        const bulkCreateQuery = gql`
+          mutation productVariantsBulkCreate(
+            $productId: ID!
+            $variants: [ProductVariantsBulkInput!]!
+          ) {
+            productVariantsBulkCreate(
+              productId: $productId
+              variants: $variants
+            ) {
+              productVariants { id title price compareAtPrice sku barcode }
+              userErrors { field message }
+            }
+          }
+        `;
+        const bulkCreateVariants = variantsToCreate.map((variant) => {
+          const created: Record<string, unknown> = {
+            optionValues: variant.optionValues,
+          };
+          if (variant.price !== undefined) created.price = variant.price;
+          if (variant.compareAtPrice !== undefined) created.compareAtPrice = variant.compareAtPrice;
+          if (variant.sku !== undefined) {
+            created.inventoryItem = { sku: variant.sku };
+          }
+          if (variant.barcode !== undefined) created.barcode = variant.barcode;
+          return created;
+        });
+        const bulkCreateData = (await shopifyClient.request(bulkCreateQuery, {
+          productId,
+          variants: bulkCreateVariants,
+        })) as {
+          productVariantsBulkCreate: {
+            productVariants: Array<Record<string, unknown>>;
+            userErrors: Array<{ field: string[]; message: string }>;
+          };
+        };
+        if (bulkCreateData.productVariantsBulkCreate.userErrors.length > 0) {
+          throw new Error(
+            `Failed to create product variants: ${bulkCreateData.productVariantsBulkCreate.userErrors
+              .map((e) => `${e.field.join(".")}: ${e.message}`).join(", ")}`,
+          );
+        }
+        const readQuery = gql`
+          query getCreatedVariants($id: ID!) {
+            product(id: $id) {
+              id title handle descriptionHtml vendor productType status tags
+              category { id name fullName }
+              variants(first: 100) {
+                edges { node { id title price compareAtPrice sku barcode } }
+              }
+              images(first: 20) { edges { node { id url altText } } }
+            }
+          }
+        `;
+        const readData = (await shopifyClient.request(readQuery, { id: productId })) as {
+          product: Record<string, any> | null;
+        };
+        if (!readData.product) throw new Error("Variant creation succeeded but read-back returned no product");
+        return {
+          product: {
+            ...readData.product,
+            variants: readData.product.variants.edges.map((e: any) => e.node),
+            images: readData.product.images.edges.map((e: any) => e.node),
+          },
+        };
       }
 
       const hasProductLevelChanges =

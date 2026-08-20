@@ -572,6 +572,10 @@ async function startServer(
               sku: z.string().optional(),
               barcode: z.string().optional(),
               options: z.array(z.string()).optional(),
+              optionValues: z.array(z.object({
+                optionName: z.string().min(1),
+                name: z.string().min(1),
+              })).optional(),
             }),
           )
           .optional(),

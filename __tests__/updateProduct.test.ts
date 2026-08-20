@@ -119,6 +119,66 @@ describe("update-product variant-only updates", () => {
   });
 });
 
+describe("update-product additional variant creation", () => {
+  it("accepts optionValues publicly and sends them through productVariantsBulkCreate", async () => {
+    const request = jest
+      .fn()
+      .mockResolvedValueOnce({
+        productVariantsBulkCreate: {
+          productVariants: [{
+            id: "gid://shopify/ProductVariant/789",
+            title: "DGK",
+            price: "12.00",
+            compareAtPrice: null,
+            sku: "DGK-001",
+            barcode: null,
+          }],
+          userErrors: [],
+        },
+      })
+      .mockResolvedValueOnce({
+        product: {
+          id: "gid://shopify/Product/123",
+          title: "Profiles",
+          handle: "profiles",
+          descriptionHtml: "",
+          vendor: "",
+          productType: "",
+          category: null,
+          status: "ACTIVE",
+          tags: [],
+          variants: { edges: [{ node: {
+            id: "gid://shopify/ProductVariant/456", title: "CGL", price: "10.00", compareAtPrice: null, sku: "CGL-001", barcode: null,
+          } }, { node: {
+            id: "gid://shopify/ProductVariant/789", title: "DGK", price: "12.00", compareAtPrice: null, sku: "DGK-001", barcode: null,
+          } }] },
+          images: { edges: [] },
+        },
+      });
+
+    updateProduct.initialize({ request } as any);
+    await updateProduct.execute({
+      id: "123",
+      variants: [{
+        optionValues: [{ optionName: "Profile", name: "DGK" }],
+        price: "12.00",
+        sku: "DGK-001",
+      }],
+    } as any);
+
+    expect(request).toHaveBeenCalledTimes(2);
+    expect(String(request.mock.calls[0][0])).toContain("productVariantsBulkCreate");
+    expect(request.mock.calls[0][1]).toEqual({
+      productId: "gid://shopify/Product/123",
+      variants: [{
+        optionValues: [{ optionName: "Profile", name: "DGK" }],
+        price: "12.00",
+        inventoryItem: { sku: "DGK-001" },
+      }],
+    });
+  });
+});
+
 describe("update-product handle updates", () => {
   it("uses productUpdate with an atomic native redirect and no unrelated fields", async () => {
     const request = jest.fn().mockResolvedValueOnce({
