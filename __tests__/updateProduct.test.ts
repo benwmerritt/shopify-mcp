@@ -112,7 +112,7 @@ describe("update-product variant-only updates", () => {
       productId: "gid://shopify/Product/123",
       variants: [{
         id: "gid://shopify/ProductVariant/456",
-        sku: "018.568",
+        inventoryItem: { sku: "018.568" },
       }],
     });
     expect(result.product.variants[0].sku).toBe("018.568");

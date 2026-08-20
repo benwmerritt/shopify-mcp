@@ -382,6 +382,10 @@ const updateProduct = {
         const bulkVariants = variantsToUpdate.map((variant) => {
           const bulkVariant = { ...variant };
           delete bulkVariant.optionValues;
+          if (bulkVariant.sku !== undefined) {
+            bulkVariant.inventoryItem = { sku: bulkVariant.sku };
+            delete bulkVariant.sku;
+          }
           return bulkVariant;
         });
 
