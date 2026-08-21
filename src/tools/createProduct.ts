@@ -161,10 +161,13 @@ const createProduct = {
           return v;
         });
       } else if (input.price || input.sku || input.barcode || input.compareAtPrice) {
-        // Simple product with single "Default Title" variant
-        // Shopify requires optionValues even for simple products
+        // Simple product with single "Default Title" variant. Shopify API
+        // 2026-01 requires the matching product option as well as optionValues.
+        productInput.productOptions = [
+          { name: "Title", values: [{ name: "Default Title" }] },
+        ];
         const variant: Record<string, unknown> = {
-          optionValues: [{ optionName: "Title", name: "Default Title" }]
+          optionValues: [{ optionName: "Title", name: "Default Title" }],
         };
         if (input.price) variant.price = input.price;
         if (input.compareAtPrice) variant.compareAtPrice = input.compareAtPrice;
