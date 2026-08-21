@@ -25,6 +25,7 @@ import { updateCustomer } from "./tools/updateCustomer.js";
 import { updateOrder } from "./tools/updateOrder.js";
 import { createProduct } from "./tools/createProduct.js";
 import { updateProduct } from "./tools/updateProduct.js";
+import { createProductOption } from "./tools/createProductOption.js";
 
 // Import new data cleanup tools
 import { deleteProduct } from "./tools/deleteProduct.js";
@@ -174,6 +175,7 @@ async function startServer(
   updateCustomer.initialize(shopifyClient);
   createProduct.initialize(shopifyClient);
   updateProduct.initialize(shopifyClient);
+  createProductOption.initialize(shopifyClient);
 
   // Initialize new data cleanup tools
   deleteProduct.initialize(shopifyClient);
@@ -595,6 +597,21 @@ async function startServer(
         return {
           content: [{ type: "text", text: JSON.stringify(result) }],
         };
+      },
+    );
+
+    server.tool(
+      "create-product-option",
+      {
+        productId: z.string().min(1),
+        name: z.string().min(1),
+        values: z.array(z.string().min(1)).min(1),
+        position: z.number().int().positive().optional(),
+        variantStrategy: z.enum(["LEAVE_AS_IS", "CREATE"]).default("LEAVE_AS_IS"),
+      },
+      async (args) => {
+        const result = await createProductOption.execute(args);
+        return { content: [{ type: "text", text: JSON.stringify(result) }] };
       },
     );
 
