@@ -621,6 +621,10 @@ async function startServer(
     server.tool(
       "delete-variant",
       {
+        productId: z
+          .string()
+          .min(1)
+          .describe("Product ID that owns the variant (can be numeric or full GID)"),
         variantId: z
           .string()
           .min(1)
