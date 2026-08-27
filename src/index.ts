@@ -1034,18 +1034,21 @@ async function startServer(
         countryCodeOfOrigin: z
           .string()
           .regex(/^[A-Z]{2}$/)
+          .nullable()
           .optional()
-          .describe("Uppercase ISO alpha-2 country code of origin"),
+          .describe("Uppercase ISO alpha-2 country code of origin, or null to clear"),
         provinceCodeOfOrigin: z
           .string()
           .min(1)
+          .nullable()
           .optional()
-          .describe("Province or state code of origin"),
+          .describe("Province or state code of origin, or null to clear"),
         harmonizedSystemCode: z
           .string()
           .regex(/^\d{6,}$/)
+          .nullable()
           .optional()
-          .describe("Harmonized system code (at least six digits)"),
+          .describe("Harmonized system code (at least six digits), or null to clear"),
       },
       async (args) => {
         const result = await updateInventoryItemCustoms.execute(args);

@@ -101,6 +101,31 @@ describe("update-inventory-item-customs", () => {
     });
   });
 
+  it("clears a customs field with null and verifies the cleared value", async () => {
+    const clearedItem = { ...updatedItem, harmonizedSystemCode: null };
+    const request = jest
+      .fn()
+      .mockResolvedValueOnce({
+        inventoryItemUpdate: {
+          inventoryItem: clearedItem,
+          userErrors: [],
+        },
+      })
+      .mockResolvedValueOnce({ inventoryItem: clearedItem });
+    updateInventoryItemCustoms.initialize({ request } as any);
+
+    const result = await updateInventoryItemCustoms.execute({
+      inventoryItemId: "123",
+      harmonizedSystemCode: null,
+    });
+
+    expect(request.mock.calls[0][1]).toEqual({
+      id: "gid://shopify/InventoryItem/123",
+      input: { harmonizedSystemCode: null },
+    });
+    expect(result.verified.harmonizedSystemCode).toBeNull();
+  });
+
   it("surfaces Shopify user errors without issuing a verification read", async () => {
     const request = jest.fn().mockResolvedValueOnce({
       inventoryItemUpdate: {

@@ -18,18 +18,21 @@ export const UpdateInventoryItemCustomsInputSchema = z
     countryCodeOfOrigin: z
       .string()
       .regex(/^[A-Z]{2}$/, "Country of origin must be an uppercase ISO alpha-2 code")
+      .nullable()
       .optional()
-      .describe("Uppercase ISO alpha-2 country code of origin"),
+      .describe("Uppercase ISO alpha-2 country code of origin, or null to clear"),
     provinceCodeOfOrigin: z
       .string()
       .min(1)
+      .nullable()
       .optional()
-      .describe("Province or state code of origin"),
+      .describe("Province or state code of origin, or null to clear"),
     harmonizedSystemCode: z
       .string()
       .regex(/^\d{6,}$/, "Harmonized system code must contain at least six digits")
+      .nullable()
       .optional()
-      .describe("Harmonized system code (at least the six-digit international code)"),
+      .describe("Harmonized system code (at least six digits), or null to clear"),
   })
   .refine(
     (input) =>
@@ -125,7 +128,7 @@ export const updateInventoryItemCustoms = {
   async execute(rawInput: UpdateInventoryItemCustomsInput) {
     const input = UpdateInventoryItemCustomsInputSchema.parse(rawInput);
     const id = normalizeInventoryItemId(input.inventoryItemId);
-    const customsInput: Record<string, string> = {};
+    const customsInput: Record<string, string | null> = {};
 
     for (const field of CUSTOMS_FIELDS) {
       if (input[field] !== undefined) {
