@@ -5,6 +5,7 @@ describe("products field selection", () => {
     id: "gid://shopify/Product/123",
     title: "Needles",
     description: "Product description",
+    descriptionHtml: "<p>Product <strong>description</strong></p>",
     handle: "needles",
     status: "ACTIVE",
     vendor: "Show & Go",
@@ -35,6 +36,7 @@ describe("products field selection", () => {
       id: "gid://shopify/Product/123",
       title: "Needles",
       description: "Product description",
+      descriptionHtml: "<p>Product <strong>description</strong></p>",
       handle: "needles",
       status: "ACTIVE",
       vendor: "Show & Go",
@@ -81,6 +83,13 @@ describe("products field selection", () => {
   it("returns exactly the fields supplied in an array", async () => {
     const result = await initializeAndExecute(["title", "images"]);
     expect(result.product).toEqual({ title: "Needles", images: product.images.edges.map(({ node }) => node) });
+  });
+
+  it("returns the exact HTML field for an explicit descriptionHtml read", async () => {
+    const result = await initializeAndExecute(["descriptionHtml"]);
+    expect(result.product).toEqual({
+      descriptionHtml: "<p>Product <strong>description</strong></p>",
+    });
   });
 });
 

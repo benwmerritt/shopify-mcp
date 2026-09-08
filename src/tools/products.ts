@@ -122,6 +122,7 @@ const products = {
               id
               title
               description
+              descriptionHtml
               handle
               status
               vendor
@@ -198,6 +199,7 @@ const products = {
           id: product.id,
           title: product.title,
           description: product.description,
+          descriptionHtml: product.descriptionHtml,
           handle: product.handle,
           status: product.status,
           vendor: product.vendor,
@@ -289,6 +291,7 @@ const products = {
                 id
                 title
                 description
+                descriptionHtml
                 handle
                 status
                 vendor
@@ -370,6 +373,7 @@ const products = {
           id: product.id,
           title: product.title,
           description: product.description,
+          descriptionHtml: product.descriptionHtml,
           handle: product.handle,
           status: product.status,
           vendor: product.vendor,
