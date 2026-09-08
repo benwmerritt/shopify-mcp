@@ -27,7 +27,7 @@ function filterProductFields(product: Record<string, unknown>, fields: string[] 
 // Resolve fields parameter to actual field list
 function resolveFields(fields: string | string[]): string[] | null {
   if (typeof fields === "string") {
-    return FIELD_PRESETS[fields] ?? FIELD_PRESETS.slim;
+    return fields === "full" ? null : FIELD_PRESETS[fields] ?? FIELD_PRESETS.slim;
   }
   return fields;
 }
