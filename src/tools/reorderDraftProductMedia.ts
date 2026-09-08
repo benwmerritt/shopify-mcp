@@ -100,18 +100,18 @@ async function readProductMedia(productId: string): Promise<ProductMediaSnapshot
 async function waitForJob(jobId: string, timeoutSeconds: number, pollIntervalMs: number): Promise<void> {
   const query = gql`
     query GetReorderJob($id: ID!) {
-      node(id: $id) {
-        __typename
-        ... on Job { id done }
+      job(id: $id) {
+        id
+        done
       }
     }
   `;
   const deadline = Date.now() + timeoutSeconds * 1_000;
   while (true) {
     const data = await shopifyClient.request(query, { id: jobId }) as {
-      node: { __typename: string; id: string; done?: boolean } | null;
+      job: { id: string; done?: boolean } | null;
     };
-    if (data.node?.__typename === "Job" && data.node.done === true) {
+    if (data.job?.done === true) {
       return;
     }
     if (Date.now() >= deadline) {
@@ -152,8 +152,8 @@ export const reorderDraftProductMedia = {
     }
 
     const moves = requestedIds
-      .map((id, newPosition) => ({ id, newPosition }))
-      .filter(({ id, newPosition }) => attachedIds[newPosition] !== id);
+      .map((id, newPosition) => ({ id, newPosition: String(newPosition) }))
+      .filter(({ id, newPosition }) => attachedIds[Number(newPosition)] !== id);
 
     let jobId: string | null = null;
     if (moves.length > 0) {

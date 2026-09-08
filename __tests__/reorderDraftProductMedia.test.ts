@@ -23,7 +23,7 @@ describe("reorder-draft-product-media", () => {
           mediaUserErrors: [],
         },
       })
-      .mockResolvedValueOnce({ node: { __typename: "Job", id: "gid://shopify/Job/9", done: true } })
+      .mockResolvedValueOnce({ job: { id: "gid://shopify/Job/9", done: true } })
       .mockResolvedValueOnce({
         product: {
           id: "gid://shopify/Product/1",
@@ -55,8 +55,8 @@ describe("reorder-draft-product-media", () => {
     expect(request.mock.calls[1][1]).toEqual({
       productId: "gid://shopify/Product/1",
       moves: [
-        { id: "gid://shopify/MediaImage/2", newPosition: 0 },
-        { id: "gid://shopify/MediaImage/1", newPosition: 1 },
+        { id: "gid://shopify/MediaImage/2", newPosition: "0" },
+        { id: "gid://shopify/MediaImage/1", newPosition: "1" },
       ],
     });
     expect(result).toMatchObject({
