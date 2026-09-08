@@ -61,6 +61,7 @@ describe("read-only MCP server integration", () => {
       "set-metafield",
       "upload-local-file",
       "start-bulk-export",
+      "reorder-draft-product-media",
     ];
     for (const toolName of mutationTools) {
       expect(readOnlyTools).not.toContain(toolName);

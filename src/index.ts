@@ -82,6 +82,7 @@ import { getFileUploadSession } from "./tools/getFileUploadSession.js";
 import { getFiles } from "./tools/getFiles.js";
 import { attachFileToProduct } from "./tools/attachFileToProduct.js";
 import { detachFileFromProduct } from "./tools/detachFileFromProduct.js";
+import { reorderDraftProductMedia } from "./tools/reorderDraftProductMedia.js";
 
 // Import OAuth helpers
 import {
@@ -228,6 +229,7 @@ async function startServer(
   getFiles.initialize(shopifyClient);
   attachFileToProduct.initialize(shopifyClient);
   detachFileFromProduct.initialize(shopifyClient);
+  reorderDraftProductMedia.initialize(shopifyClient);
 
   const publicAppUrl = getPublicAppUrl(PORT);
   createFileUploadSession.initialize({
@@ -2231,6 +2233,20 @@ async function startServer(
         return {
           content: [{ type: "text", text: JSON.stringify(result) }],
         };
+      },
+    );
+
+    server.tool(
+      "reorder-draft-product-media",
+      {
+        productId: z.string().min(1).describe("Product ID (numeric or full GID)"),
+        mediaIds: z.array(z.string().min(1)).describe("Complete attached MediaImage IDs in desired order"),
+        pollIntervalMs: z.number().int().min(0).max(60_000).default(1_000),
+        timeoutSeconds: z.number().positive().max(300).default(60),
+      },
+      async (args) => {
+        const result = await reorderDraftProductMedia.execute(args);
+        return { content: [{ type: "text", text: JSON.stringify(result) }] };
       },
     );
 
