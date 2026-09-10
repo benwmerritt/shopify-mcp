@@ -549,6 +549,10 @@ async function startServer(
           "When changing handle, create Shopify's native redirect from the previous handle",
         ),
         descriptionHtml: z.string().optional(),
+        seo: z.object({
+          title: z.string().optional(),
+          description: z.string().optional(),
+        }).optional(),
         vendor: z.string().optional(),
         productType: z.string().optional(),
         category: z

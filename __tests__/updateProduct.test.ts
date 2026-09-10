@@ -1,8 +1,43 @@
 import {
   selectedOptionsToOptionValues,
+  UpdateProductInputSchema,
   updateProduct,
   verifyCategorySet,
 } from "../src/tools/updateProduct.js";
+
+describe("update-product SEO forwarding", () => {
+  it("accepts SEO and forwards it exactly through ProductSetInput", async () => {
+    const request = jest.fn().mockResolvedValueOnce({ productSet: { product: {
+      id: "gid://shopify/Product/123", title: "Product", handle: "product",
+      descriptionHtml: "", vendor: "", productType: "", category: null,
+      status: "DRAFT", tags: [], variants: { edges: [] }, images: { edges: [] },
+    }, userErrors: [] } });
+    expect(UpdateProductInputSchema.parse({ id: "123", seo: {
+      title: "SEO title", description: "SEO description",
+    }}).seo).toEqual({ title: "SEO title", description: "SEO description" });
+    updateProduct.initialize({ request } as any);
+    await updateProduct.execute({ id: "123", seo: {
+      title: "SEO title", description: "SEO description",
+    }});
+    expect(request.mock.calls[0][1].input).toEqual({
+      id: "gid://shopify/Product/123",
+      seo: { title: "SEO title", description: "SEO description" },
+    });
+  });
+
+  it("omits SEO when it is not provided", async () => {
+    const request = jest.fn().mockResolvedValueOnce({ productSet: { product: {
+      id: "gid://shopify/Product/123", title: "Product", handle: "product",
+      descriptionHtml: "", vendor: "", productType: "", category: null,
+      status: "DRAFT", tags: [], variants: { edges: [] }, images: { edges: [] },
+    }, userErrors: [] } });
+    updateProduct.initialize({ request } as any);
+    await updateProduct.execute({ id: "123", title: "Product" });
+    expect(request.mock.calls[0][1].input).toEqual({
+      id: "gid://shopify/Product/123", title: "Product",
+    });
+  });
+});
 
 describe("update-product variant option preservation", () => {
   it("maps selectedOptions to ProductSetInput optionValues", () => {

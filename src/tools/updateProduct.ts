@@ -23,6 +23,11 @@ const ImageSchema = z.object({
   altText: z.string().optional(),
 });
 
+const SeoSchema = z.object({
+  title: z.string().optional(),
+  description: z.string().optional(),
+});
+
 // Update product input schema
 export const UpdateProductInputSchema = z.object({
   // REQUIRED - product ID
@@ -35,6 +40,7 @@ export const UpdateProductInputSchema = z.object({
     "When changing handle, create Shopify's native redirect from the previous handle",
   ),
   descriptionHtml: z.string().optional(),
+  seo: SeoSchema.optional(),
   vendor: z.string().optional(),
   productType: z.string().optional(),
   category: z.string().optional().describe("Shopify Standard Product Taxonomy GID. New format uses `vp-*` for Vehicles & Parts (e.g. 'gid://shopify/TaxonomyCategory/vp-2-2-3-2' = Non-Electric Motorcycles & Scooters). Use `search-taxonomy` to find IDs — don't guess. The tool VERIFIES the category stuck by comparing the returned product.category.id to what you sent; if they don't match it throws a clear error instead of silently returning null."),
@@ -127,6 +133,7 @@ const updateProduct = {
       if (input.handle !== undefined && input.redirectNewHandle === true) {
         const otherChanges =
           input.title !== undefined || input.descriptionHtml !== undefined ||
+          input.seo !== undefined ||
           input.vendor !== undefined || input.productType !== undefined ||
           input.category !== undefined || input.tags !== undefined ||
           input.status !== undefined || input.price !== undefined ||
@@ -250,6 +257,7 @@ const updateProduct = {
               descriptionHtml
               vendor
               productType
+              seo { title description }
               category {
                 id
                 name
@@ -296,6 +304,7 @@ const updateProduct = {
       if (input.title !== undefined) productInput.title = input.title;
       if (input.handle !== undefined) productInput.handle = input.handle;
       if (input.descriptionHtml !== undefined) productInput.descriptionHtml = input.descriptionHtml;
+      if (input.seo !== undefined) productInput.seo = input.seo;
       if (input.vendor !== undefined) productInput.vendor = input.vendor;
       if (input.productType !== undefined) productInput.productType = input.productType;
       if (input.category !== undefined) productInput.category = input.category;
@@ -419,6 +428,7 @@ const updateProduct = {
         input.title !== undefined ||
         input.handle !== undefined ||
         input.descriptionHtml !== undefined ||
+        input.seo !== undefined ||
         input.vendor !== undefined ||
         input.productType !== undefined ||
         input.category !== undefined ||
