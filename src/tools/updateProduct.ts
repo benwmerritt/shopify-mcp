@@ -339,7 +339,10 @@ const updateProduct = {
           product: { variants: { edges: Array<{ node: { id: string } }> } } | null;
         };
 
-        firstVariantId = fetchData.product?.variants?.edges?.[0]?.node.id ?? null;
+        if (!fetchData.product) {
+          throw new Error("Product not found - check the ID");
+        }
+        firstVariantId = fetchData.product.variants?.edges?.[0]?.node.id ?? null;
       }
 
       const productSelection = `
@@ -448,6 +451,7 @@ const updateProduct = {
       // New variants must use the purpose-built bulk-create mutation. The
       // public ProductSetInput schema does not expose variants[].optionValues
       // for additional variants on API 2026-01.
+      let createdVariants = false;
       if (variantsToCreate.length > 0) {
         const bulkCreateQuery = gql`
           mutation productVariantsBulkCreate(
@@ -489,7 +493,7 @@ const updateProduct = {
               .map((e) => `${e.field.join(".")}: ${e.message}`).join(", ")}`,
           );
         }
-        return formatProduct(await readProduct("Variant creation succeeded but read-back returned no product"));
+        createdVariants = true;
       }
 
       // Product-level fields via productSet (no variants in the payload).
@@ -568,8 +572,10 @@ const updateProduct = {
               .join(", ")}`
           );
         }
+      }
 
-        // productSet's payload predates the variant write, so read back.
+      if (createdVariants || variantsToUpdate.length > 0) {
+        // Read back once after all variant writes, including any after productSet.
         product = await readProduct("Product update succeeded but read-back returned no product");
       }
 

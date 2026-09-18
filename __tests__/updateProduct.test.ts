@@ -83,6 +83,16 @@ describe("update-product verifyCategorySet", () => {
 });
 
 describe("update-product variant-only updates", () => {
+  it("reports a missing product when fetching the first variant for a simple field", async () => {
+    const request = jest.fn().mockResolvedValueOnce({ product: null });
+
+    updateProduct.initialize({ request } as any);
+    await expect(
+      updateProduct.execute({ id: "123", price: "9.99" }),
+    ).rejects.toThrow(/Product not found/);
+    expect(request).toHaveBeenCalledTimes(1);
+  });
+
   it("uses productVariantsBulkUpdate for a SKU-only update", async () => {
     const request = jest
       .fn()
@@ -531,6 +541,65 @@ describe("update-product renameOption", () => {
 });
 
 describe("update-product combined product-level and variant edits", () => {
+  it("creates variants, writes product and first-variant edits, then reads back once", async () => {
+    const firstVariantId = "gid://shopify/ProductVariant/456";
+    const updatedVariant = {
+      id: firstVariantId, title: "M", price: "9.99",
+      compareAtPrice: null, sku: null, barcode: null,
+    };
+    const createdVariant = {
+      id: "gid://shopify/ProductVariant/789", title: "L", price: "5.00",
+      compareAtPrice: null, sku: null, barcode: null,
+    };
+    const request = jest
+      .fn()
+      .mockResolvedValueOnce({
+        product: { variants: { edges: [{ node: { id: firstVariantId } }] } },
+      })
+      .mockResolvedValueOnce({
+        productVariantsBulkCreate: { productVariants: [createdVariant], userErrors: [] },
+      })
+      .mockResolvedValueOnce({
+        productSet: {
+          product: { ...PRODUCT_FIELDS, title: "X", variants: { edges: [] }, images: { edges: [] } },
+          userErrors: [],
+        },
+      })
+      .mockResolvedValueOnce({
+        productVariantsBulkUpdate: { productVariants: [updatedVariant], userErrors: [] },
+      })
+      .mockResolvedValueOnce({
+        product: {
+          ...PRODUCT_FIELDS, title: "X",
+          variants: { edges: [{ node: updatedVariant }, { node: createdVariant }] },
+          images: { edges: [] },
+        },
+      });
+
+    updateProduct.initialize({ request } as any);
+    const result = await updateProduct.execute({
+      id: "123", title: "X", price: "9.99",
+      variants: [{ optionValues: [{ optionName: "Size", name: "L" }], price: "5.00" }],
+    });
+
+    expect(request).toHaveBeenCalledTimes(5);
+    expect(String(request.mock.calls[0][0])).toContain("query getProduct");
+    expect(String(request.mock.calls[1][0])).toContain("mutation productVariantsBulkCreate");
+    expect(request.mock.calls[1][1]).toEqual({
+      productId: "gid://shopify/Product/123",
+      variants: [{ optionValues: [{ optionName: "Size", name: "L" }], price: "5.00" }],
+    });
+    expect(String(request.mock.calls[2][0])).toContain("mutation productSet");
+    expect(request.mock.calls[2][1].input).toEqual({
+      id: "gid://shopify/Product/123", title: "X",
+    });
+    expect(String(request.mock.calls[3][0])).toContain("mutation productVariantsBulkUpdate");
+    expect(request.mock.calls[3][1].variants).toEqual([{ id: firstVariantId, price: "9.99" }]);
+    expect(String(request.mock.calls[4][0])).toContain("query getUpdatedProduct");
+    expect(result.product.title).toBe("X");
+    expect(result.product.variants).toEqual([updatedVariant, createdVariant]);
+  });
+
   it("splits {title, cost} into productSet then productVariantsBulkUpdate", async () => {
     const request = jest
       .fn()
