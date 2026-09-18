@@ -273,12 +273,30 @@ const updateProduct = {
           "Top-level price/sku/compareAtPrice/barcode/cost cannot be combined with new variants - put those fields on a variants[] entry with an id instead",
         );
       }
+      // The public schema accepts variants[].options (positional values) but
+      // nothing has ever mapped it; refuse it rather than silently drop it.
+      if ((input.variants ?? []).some((v) => v.options !== undefined)) {
+        throw new Error(
+          "variants[].options is not supported - use variants[].optionValues ([{optionName, name}]) instead",
+        );
+      }
 
-      // Rename a product option in place. Runs before any variant writes so
-      // later option-value lookups see the new name. Shopify can return empty
-      // userErrors without applying the rename, so the returned options are
-      // checked rather than trusted.
+      // Rename a product option in place. productOptionUpdate cannot be rolled
+      // back, so it must be the only write in the request: anything that could
+      // fail afterwards would leave the rename applied and `from` gone for a
+      // retry. Shopify can return empty userErrors without applying the rename,
+      // so the returned options are checked rather than trusted.
       if (input.renameOption) {
+        const otherWrites =
+          input.title !== undefined || input.handle !== undefined ||
+          input.descriptionHtml !== undefined || input.seo !== undefined ||
+          input.vendor !== undefined || input.productType !== undefined ||
+          input.category !== undefined || input.tags !== undefined ||
+          input.status !== undefined || input.images !== undefined ||
+          hasSimpleVariantFields || input.variants !== undefined;
+        if (otherWrites) {
+          throw new Error("renameOption must be submitted alone - send other changes in a separate call");
+        }
         const { from, to } = input.renameOption;
         const optData = (await shopifyClient.request(
           gql`query productOptions($id: ID!) { product(id: $id) { options { id name } } }`,

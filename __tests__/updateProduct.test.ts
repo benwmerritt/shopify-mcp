@@ -503,40 +503,37 @@ describe("update-product renameOption", () => {
     ).rejects.toThrow(/Option rename did not apply/);
   });
 
-  it("runs the rename before other product-level changes", async () => {
-    const request = jest
-      .fn()
-      .mockResolvedValueOnce({ product: { options } })
-      .mockResolvedValueOnce({
-        productOptionUpdate: {
-          product: { options: [
-            { id: "gid://shopify/ProductOption/1", name: "Model" },
-            { id: "gid://shopify/ProductOption/2", name: "Size" },
-          ] },
-          userErrors: [],
-        },
-      })
-      .mockResolvedValueOnce({
-        productSet: {
-          product: { ...PRODUCT_FIELDS, title: "Renamed", variants: { edges: [] }, images: { edges: [] } },
-          userErrors: [],
-        },
-      });
+  it("rejects renameOption combined with any other write before mutating", async () => {
+    // productOptionUpdate cannot be rolled back, so a later failing write
+    // would leave the rename applied and `from` gone for a retry.
+    const request = jest.fn();
 
     updateProduct.initialize({ request } as any);
-    const result = await updateProduct.execute({
-      id: "123",
-      title: "Renamed",
-      renameOption: { from: "Voltage", to: "Model" },
-    });
+    await expect(
+      updateProduct.execute({
+        id: "123",
+        title: "Renamed",
+        renameOption: { from: "Voltage", to: "Model" },
+      }),
+    ).rejects.toThrow(/renameOption must be submitted alone/);
+    await expect(
+      updateProduct.execute({
+        id: "123",
+        renameOption: { from: "Voltage", to: "Model" },
+        variants: [{ id: "456", price: "1.00" }],
+      }),
+    ).rejects.toThrow(/renameOption must be submitted alone/);
+    expect(request).not.toHaveBeenCalled();
+  });
 
-    expect(String(request.mock.calls[1][0])).toContain("productOptionUpdate");
-    expect(String(request.mock.calls[2][0])).toContain("productSet");
-    expect(request.mock.calls[2][1].input).toEqual({
-      id: "gid://shopify/Product/123",
-      title: "Renamed",
-    });
-    expect(result.product.title).toBe("Renamed");
+  it("rejects the unsupported variants[].options field before any write", async () => {
+    const request = jest.fn();
+
+    updateProduct.initialize({ request } as any);
+    await expect(
+      updateProduct.execute({ id: "123", variants: [{ id: "456", options: ["XL"], price: "1.00" }] }),
+    ).rejects.toThrow(/variants\[\]\.options is not supported/);
+    expect(request).not.toHaveBeenCalled();
   });
 });
 
