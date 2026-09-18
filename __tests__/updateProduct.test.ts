@@ -705,3 +705,29 @@ describe("update-product combined product-level and variant edits", () => {
     expect(request).not.toHaveBeenCalled();
   });
 });
+
+describe("update-product existing-variant optionValues", () => {
+  it("forwards optionValues on an existing variant to productVariantsBulkUpdate", async () => {
+    const request = jest
+      .fn()
+      .mockResolvedValueOnce({
+        productVariantsBulkUpdate: { productVariants: [], userErrors: [] },
+      })
+      .mockResolvedValueOnce({
+        product: { ...PRODUCT_FIELDS, variants: { edges: [] }, images: { edges: [] } },
+      });
+
+    updateProduct.initialize({ request } as any);
+    await updateProduct.execute({
+      id: "123",
+      variants: [{ id: "456", optionValues: [{ optionName: "Size", name: "XL" }], price: "1.00" }],
+    });
+
+    expect(String(request.mock.calls[0][0])).toContain("productVariantsBulkUpdate");
+    expect(request.mock.calls[0][1].variants).toEqual([{
+      id: "gid://shopify/ProductVariant/456",
+      price: "1.00",
+      optionValues: [{ optionName: "Size", name: "XL" }],
+    }]);
+  });
+});

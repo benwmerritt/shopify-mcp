@@ -96,9 +96,9 @@ export function verifyCategorySet(
   );
 }
 
-// ProductSetInput requires optionValues on every variant payload, including
-// updates to an existing variant. Preserve the variant's current selections
-// instead of forcing callers to repeat them for simple price/SKU edits.
+// Map a variant's selectedOptions to optionValues entries. No longer used by
+// execute() (variant edits go through productVariantsBulkUpdate, which does
+// not need them); kept for callers and tests.
 export function selectedOptionsToOptionValues(
   selectedOptions: Array<{ name: string; value: string }>,
 ): Array<{ optionName: string; name: string }> {
@@ -443,6 +443,7 @@ const updateProduct = {
         if (variant.price !== undefined) v.price = variant.price;
         if (variant.compareAtPrice !== undefined) v.compareAtPrice = variant.compareAtPrice;
         if (variant.barcode !== undefined) v.barcode = variant.barcode;
+        if (variant.optionValues !== undefined) v.optionValues = variant.optionValues;
         const inventoryItem = buildInventoryItemInput(variant);
         if (inventoryItem) v.inventoryItem = inventoryItem;
         variantsToUpdate.push(v);
