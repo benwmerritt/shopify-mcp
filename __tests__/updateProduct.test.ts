@@ -1,4 +1,5 @@
 import {
+  buildInventoryItemInput,
   selectedOptionsToOptionValues,
   UpdateProductInputSchema,
   updateProduct,
@@ -253,5 +254,282 @@ describe("update-product handle updates", () => {
     });
     expect(result.product.handle).toBe("keihin-float-bowl-screw-n114-04160");
     expect(result.redirectNewHandle).toBe(true);
+  });
+});
+
+describe("update-product buildInventoryItemInput", () => {
+  it("returns undefined when neither sku nor cost is set", () => {
+    expect(buildInventoryItemInput({})).toBeUndefined();
+  });
+
+  it("maps sku alone", () => {
+    expect(buildInventoryItemInput({ sku: "ABC" })).toEqual({ sku: "ABC" });
+  });
+
+  it("maps cost alone", () => {
+    expect(buildInventoryItemInput({ cost: "4.20" })).toEqual({ cost: "4.20" });
+  });
+
+  it("merges sku and cost into a single inventoryItem", () => {
+    expect(buildInventoryItemInput({ sku: "ABC", cost: "4.20" })).toEqual({
+      sku: "ABC",
+      cost: "4.20",
+    });
+  });
+
+  it("passes an empty-string sku through (clears the SKU)", () => {
+    expect(buildInventoryItemInput({ sku: "" })).toEqual({ sku: "" });
+  });
+});
+
+const PRODUCT_FIELDS = {
+  id: "gid://shopify/Product/123", title: "Widget", handle: "widget",
+  descriptionHtml: "", vendor: "", productType: "", category: null,
+  status: "ACTIVE", tags: [],
+};
+
+describe("update-product cost per item", () => {
+  it("sends cost via inventoryItem on productVariantsBulkUpdate and reads unitCost back", async () => {
+    const request = jest
+      .fn()
+      .mockResolvedValueOnce({
+        product: { variants: { edges: [{ node: {
+          id: "gid://shopify/ProductVariant/456",
+          selectedOptions: [{ name: "Title", value: "Default Title" }],
+        } }] } },
+      })
+      .mockResolvedValueOnce({
+        productVariantsBulkUpdate: { productVariants: [], userErrors: [] },
+      })
+      .mockResolvedValueOnce({
+        product: {
+          ...PRODUCT_FIELDS,
+          variants: { edges: [{ node: {
+            id: "gid://shopify/ProductVariant/456", title: "Default Title",
+            price: "10.00", compareAtPrice: null, sku: "W-1", barcode: null,
+            inventoryItem: { unitCost: { amount: "4.20" } },
+          } }] },
+          images: { edges: [] },
+        },
+      });
+
+    updateProduct.initialize({ request } as any);
+    const result = await updateProduct.execute({
+      id: "123",
+      variants: [{ id: "456", sku: "W-1", cost: "4.20" }],
+    });
+
+    expect(String(request.mock.calls[1][0])).toContain("productVariantsBulkUpdate");
+    expect(request.mock.calls[1][1]).toEqual({
+      productId: "gid://shopify/Product/123",
+      variants: [{
+        id: "gid://shopify/ProductVariant/456",
+        inventoryItem: { sku: "W-1", cost: "4.20" },
+      }],
+    });
+    // unitCost needs read_inventory, so it is only selected when cost was written
+    expect(String(request.mock.calls[2][0])).toContain("unitCost");
+    expect(result.product.variants[0]).toEqual({
+      id: "gid://shopify/ProductVariant/456", title: "Default Title",
+      price: "10.00", compareAtPrice: null, sku: "W-1", barcode: null,
+      cost: "4.20",
+    });
+  });
+
+  it("does not select unitCost or return cost when no cost was written", async () => {
+    const request = jest
+      .fn()
+      .mockResolvedValueOnce({
+        product: { variants: { edges: [{ node: {
+          id: "gid://shopify/ProductVariant/456",
+          selectedOptions: [{ name: "Title", value: "Default Title" }],
+        } }] } },
+      })
+      .mockResolvedValueOnce({
+        productVariantsBulkUpdate: { productVariants: [], userErrors: [] },
+      })
+      .mockResolvedValueOnce({
+        product: {
+          ...PRODUCT_FIELDS,
+          variants: { edges: [{ node: {
+            id: "gid://shopify/ProductVariant/456", title: "Default Title",
+            price: "12.00", compareAtPrice: null, sku: null, barcode: null,
+          } }] },
+          images: { edges: [] },
+        },
+      });
+
+    updateProduct.initialize({ request } as any);
+    const result = await updateProduct.execute({ id: "123", price: "12.00" });
+
+    expect(String(request.mock.calls[2][0])).not.toContain("unitCost");
+    expect(result.product.variants[0]).not.toHaveProperty("cost");
+  });
+
+  it("sends cost via inventoryItem when creating new variants", async () => {
+    const request = jest
+      .fn()
+      .mockResolvedValueOnce({
+        productVariantsBulkCreate: { productVariants: [], userErrors: [] },
+      })
+      .mockResolvedValueOnce({
+        product: { ...PRODUCT_FIELDS, variants: { edges: [] }, images: { edges: [] } },
+      });
+
+    updateProduct.initialize({ request } as any);
+    await updateProduct.execute({
+      id: "123",
+      variants: [{
+        optionValues: [{ optionName: "Size", name: "Large" }],
+        price: "12.00",
+        sku: "W-L",
+        cost: "5.00",
+      }],
+    });
+
+    expect(request.mock.calls[0][1]).toEqual({
+      productId: "gid://shopify/Product/123",
+      variants: [{
+        optionValues: [{ optionName: "Size", name: "Large" }],
+        price: "12.00",
+        inventoryItem: { sku: "W-L", cost: "5.00" },
+      }],
+    });
+  });
+
+  it("uses the simple cost field to update the first variant", async () => {
+    const request = jest
+      .fn()
+      .mockResolvedValueOnce({
+        product: { variants: { edges: [{ node: {
+          id: "gid://shopify/ProductVariant/456",
+          selectedOptions: [{ name: "Title", value: "Default Title" }],
+        } }] } },
+      })
+      .mockResolvedValueOnce({
+        productVariantsBulkUpdate: { productVariants: [], userErrors: [] },
+      })
+      .mockResolvedValueOnce({
+        product: { ...PRODUCT_FIELDS, variants: { edges: [] }, images: { edges: [] } },
+      });
+
+    updateProduct.initialize({ request } as any);
+    await updateProduct.execute({ id: "123", cost: "3.00" });
+
+    expect(request.mock.calls[1][1].variants).toEqual([{
+      id: "gid://shopify/ProductVariant/456",
+      inventoryItem: { cost: "3.00" },
+    }]);
+  });
+});
+
+describe("update-product renameOption", () => {
+  const options = [
+    { id: "gid://shopify/ProductOption/1", name: "Voltage" },
+    { id: "gid://shopify/ProductOption/2", name: "Size" },
+  ];
+
+  it("renames via productOptionUpdate, verifies the result, and reads the product back", async () => {
+    const request = jest
+      .fn()
+      .mockResolvedValueOnce({ product: { options } })
+      .mockResolvedValueOnce({
+        productOptionUpdate: {
+          product: { options: [
+            { id: "gid://shopify/ProductOption/1", name: "Model" },
+            { id: "gid://shopify/ProductOption/2", name: "Size" },
+          ] },
+          userErrors: [],
+        },
+      })
+      .mockResolvedValueOnce({
+        product: {
+          ...PRODUCT_FIELDS,
+          options: [
+            { id: "gid://shopify/ProductOption/1", name: "Model" },
+            { id: "gid://shopify/ProductOption/2", name: "Size" },
+          ],
+          variants: { edges: [] },
+          images: { edges: [] },
+        },
+      });
+
+    updateProduct.initialize({ request } as any);
+    const result = await updateProduct.execute({
+      id: "123",
+      renameOption: { from: "Voltage", to: "Model" },
+    });
+
+    expect(request).toHaveBeenCalledTimes(3);
+    expect(String(request.mock.calls[1][0])).toContain("productOptionUpdate");
+    expect(request.mock.calls[1][1]).toEqual({
+      productId: "gid://shopify/Product/123",
+      option: { id: "gid://shopify/ProductOption/1", name: "Model" },
+    });
+    expect(String(request.mock.calls[2][0])).not.toContain("productSet");
+    expect((result.product as any).options).toEqual([
+      { id: "gid://shopify/ProductOption/1", name: "Model" },
+      { id: "gid://shopify/ProductOption/2", name: "Size" },
+    ]);
+  });
+
+  it("lists the product's actual options when `from` does not match", async () => {
+    const request = jest.fn().mockResolvedValueOnce({ product: { options } });
+
+    updateProduct.initialize({ request } as any);
+    await expect(
+      updateProduct.execute({ id: "123", renameOption: { from: "Colour", to: "Color" } }),
+    ).rejects.toThrow(/Option "Colour" not found on product \(has: Voltage, Size\)/);
+    expect(request).toHaveBeenCalledTimes(1);
+  });
+
+  it("throws when Shopify returns no userErrors but the rename did not apply", async () => {
+    const request = jest
+      .fn()
+      .mockResolvedValueOnce({ product: { options } })
+      .mockResolvedValueOnce({
+        productOptionUpdate: { product: { options }, userErrors: [] },
+      });
+
+    updateProduct.initialize({ request } as any);
+    await expect(
+      updateProduct.execute({ id: "123", renameOption: { from: "Voltage", to: "Model" } }),
+    ).rejects.toThrow(/Option rename did not apply/);
+  });
+
+  it("runs the rename before other product-level changes", async () => {
+    const request = jest
+      .fn()
+      .mockResolvedValueOnce({ product: { options } })
+      .mockResolvedValueOnce({
+        productOptionUpdate: {
+          product: { options: [
+            { id: "gid://shopify/ProductOption/1", name: "Model" },
+            { id: "gid://shopify/ProductOption/2", name: "Size" },
+          ] },
+          userErrors: [],
+        },
+      })
+      .mockResolvedValueOnce({
+        productSet: {
+          product: { ...PRODUCT_FIELDS, title: "Renamed", variants: { edges: [] }, images: { edges: [] } },
+          userErrors: [],
+        },
+      });
+
+    updateProduct.initialize({ request } as any);
+    const result = await updateProduct.execute({
+      id: "123",
+      title: "Renamed",
+      renameOption: { from: "Voltage", to: "Model" },
+    });
+
+    expect(String(request.mock.calls[1][0])).toContain("productOptionUpdate");
+    expect(String(request.mock.calls[2][0])).toContain("productSet");
+    expect(request.mock.calls[2][1].input).toEqual({
+      id: "gid://shopify/Product/123",
+      title: "Renamed",
+    });
+    expect(result.product.title).toBe("Renamed");
   });
 });

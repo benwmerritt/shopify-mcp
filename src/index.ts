@@ -569,6 +569,7 @@ async function startServer(
         compareAtPrice: z.string().optional(),
         sku: z.string().optional(),
         barcode: z.string().optional(),
+        cost: z.string().optional().describe("Unit cost (cost per item) in the shop currency"),
 
         // For updating specific variants
         variants: z
@@ -584,9 +585,19 @@ async function startServer(
                 optionName: z.string().min(1),
                 name: z.string().min(1),
               })).optional(),
+              cost: z.string().optional(),
             }),
           )
           .optional(),
+
+        // Rename a product option in place (e.g. "Voltage" -> "Model").
+        renameOption: z
+          .object({
+            from: z.string().min(1),
+            to: z.string().min(1),
+          })
+          .optional()
+          .describe("Rename a product option in place; variants and their IDs are preserved"),
 
         // Images
         images: z

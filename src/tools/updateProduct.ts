@@ -15,6 +15,9 @@ const VariantUpdateSchema = z.object({
     optionName: z.string().min(1),
     name: z.string().min(1),
   })).optional(),
+  // Unit cost ("cost per item", shop currency). Lives on the inventory item,
+  // not the variant, so it is sent as inventoryItem.cost.
+  cost: z.string().optional(),
 });
 
 // Image schema
@@ -53,9 +56,17 @@ export const UpdateProductInputSchema = z.object({
   compareAtPrice: z.string().optional(),
   sku: z.string().optional(),
   barcode: z.string().optional(),
+  cost: z.string().optional().describe("Unit cost (cost per item) in the shop currency"),
 
   // For updating specific variants
   variants: z.array(VariantUpdateSchema).optional(),
+
+  // Rename a product option in place (e.g. "Voltage" -> "Model").
+  // Existing variants and their IDs are preserved.
+  renameOption: z.object({
+    from: z.string().min(1),
+    to: z.string().min(1),
+  }).optional().describe("Rename a product option in place; variants and their IDs are preserved"),
 
   // Images
   images: z.array(ImageSchema).optional(),
@@ -95,6 +106,46 @@ export function selectedOptionsToOptionValues(
     optionName: name,
     name: value,
   }));
+}
+
+// ProductVariantsBulkInput has no top-level sku or cost; both live on the
+// inventory item (InventoryItemInput.sku / InventoryItemInput.cost). Merge
+// them into a single inventoryItem object so neither clobbers the other.
+// Exported for unit tests.
+export function buildInventoryItemInput(
+  fields: { sku?: string; cost?: string },
+): { sku?: string; cost?: string } | undefined {
+  if (fields.sku === undefined && fields.cost === undefined) return undefined;
+  return {
+    ...(fields.sku !== undefined ? { sku: fields.sku } : {}),
+    ...(fields.cost !== undefined ? { cost: fields.cost } : {}),
+  };
+}
+
+// inventoryItem.unitCost needs the read_inventory scope, so it is only
+// selected when the caller actually wrote a cost. Cost-less updates must keep
+// working on tokens that only carry product scopes.
+const variantSelection = (includeCost: boolean) =>
+  `id title price compareAtPrice sku barcode${
+    includeCost ? " inventoryItem { unitCost { amount } }" : ""
+  }`;
+
+type VariantNode = {
+  id: string;
+  title: string;
+  price: string;
+  compareAtPrice: string | null;
+  sku: string | null;
+  barcode: string | null;
+  inventoryItem?: { unitCost: { amount: string } | null } | null;
+};
+
+// Flatten unitCost onto the variant as `cost` when it was requested; leave the
+// response shape unchanged otherwise.
+function formatVariant(node: VariantNode, includeCost: boolean): Record<string, unknown> {
+  const { inventoryItem, ...rest } = node;
+  if (!includeCost) return rest;
+  return { ...rest, cost: inventoryItem?.unitCost?.amount ?? null };
 }
 
 // Helper to normalize product ID to GID format
@@ -138,7 +189,8 @@ const updateProduct = {
           input.category !== undefined || input.tags !== undefined ||
           input.status !== undefined || input.price !== undefined ||
           input.compareAtPrice !== undefined || input.sku !== undefined ||
-          input.barcode !== undefined || input.variants !== undefined ||
+          input.barcode !== undefined || input.cost !== undefined ||
+          input.variants !== undefined || input.renameOption !== undefined ||
           input.images !== undefined;
         if (otherChanges) {
           throw new Error("Handle+redirect updates must be submitted alone");
@@ -192,13 +244,71 @@ const updateProduct = {
         };
       }
 
+      // Rename a product option in place. Runs before any variant writes so
+      // later option-value lookups see the new name. Shopify can return empty
+      // userErrors without applying the rename, so the returned options are
+      // checked rather than trusted.
+      if (input.renameOption) {
+        const { from, to } = input.renameOption;
+        const optData = (await shopifyClient.request(
+          gql`query productOptions($id: ID!) { product(id: $id) { options { id name } } }`,
+          { id: productId },
+        )) as { product: { options: Array<{ id: string; name: string }> } | null };
+        if (!optData.product) {
+          throw new Error("Product not found - check the ID");
+        }
+        const option = optData.product.options.find((o) => o.name === from);
+        if (!option) {
+          const names = optData.product.options.map((o) => o.name).join(", ");
+          throw new Error(`Option "${from}" not found on product (has: ${names})`);
+        }
+        const renameData = (await shopifyClient.request(
+          gql`
+            mutation productOptionUpdate($productId: ID!, $option: OptionUpdateInput!) {
+              productOptionUpdate(productId: $productId, option: $option) {
+                product { options { id name } }
+                userErrors { field message }
+              }
+            }
+          `,
+          { productId, option: { id: option.id, name: to } },
+        )) as {
+          productOptionUpdate: {
+            product: { options: Array<{ id: string; name: string }> } | null;
+            userErrors: Array<{ field: string[] | null; message: string }>;
+          };
+        };
+        if (renameData.productOptionUpdate.userErrors.length > 0) {
+          throw new Error(
+            `option rename: ${renameData.productOptionUpdate.userErrors
+              .map((e) => (e.field?.length ? `${e.field.join(".")}: ${e.message}` : e.message))
+              .join(", ")}`,
+          );
+        }
+        const renamed = renameData.productOptionUpdate.product?.options.find((o) => o.id === option.id);
+        if (!renamed || renamed.name !== to) {
+          throw new Error(
+            `Option rename did not apply: option ${option.id} is "${renamed ? renamed.name : "missing"}" (expected "${to}")`,
+          );
+        }
+      }
+
+      // Only select (and return) cost when the caller wrote one - see
+      // variantSelection() for the scope rationale.
+      const wantsCost =
+        input.cost !== undefined ||
+        (input.variants ?? []).some((v) => v.cost !== undefined);
+
       // First, fetch the product to get current variant IDs/options if needed
       let firstVariantId: string | null = null;
       const variantOptionValues = new Map<
         string,
         Array<{ optionName: string; name: string }>
       >();
-      const hasSimpleVariantFields = input.price || input.sku || input.compareAtPrice || input.barcode;
+      const hasSimpleVariantFields =
+        input.price !== undefined || input.sku !== undefined ||
+        input.compareAtPrice !== undefined || input.barcode !== undefined ||
+        input.cost !== undefined;
 
       if (hasSimpleVariantFields || input.variants?.some((variant) => variant.id)) {
         // ProductSet requires optionValues even when updating an existing
@@ -267,14 +377,7 @@ const updateProduct = {
               tags
               variants(first: 100) {
                 edges {
-                  node {
-                    id
-                    title
-                    price
-                    compareAtPrice
-                    sku
-                    barcode
-                  }
+                  node { ${variantSelection(wantsCost)} }
                 }
               }
               images(first: 20) {
@@ -324,6 +427,7 @@ const updateProduct = {
         if (input.compareAtPrice !== undefined) simpleVariant.compareAtPrice = input.compareAtPrice;
         if (input.sku !== undefined) simpleVariant.sku = input.sku;
         if (input.barcode !== undefined) simpleVariant.barcode = input.barcode;
+        if (input.cost !== undefined) simpleVariant.cost = input.cost;
         variantsToUpdate.push(simpleVariant);
       }
 
@@ -340,12 +444,19 @@ const updateProduct = {
           if (variant.compareAtPrice !== undefined) v.compareAtPrice = variant.compareAtPrice;
           if (variant.sku !== undefined) v.sku = variant.sku;
           if (variant.barcode !== undefined) v.barcode = variant.barcode;
+          if (variant.cost !== undefined) v.cost = variant.cost;
           variantsToUpdate.push(v);
         }
       }
 
       if (variantsToUpdate.length > 0) {
-        productInput.variants = variantsToUpdate;
+        // ProductVariantSetInput takes sku at the top level but cost only via
+        // inventoryItem, so move cost across for the productSet path.
+        productInput.variants = variantsToUpdate.map((variant) => {
+          const { cost, ...rest } = variant;
+          if (cost === undefined) return rest;
+          return { ...rest, inventoryItem: { cost } };
+        });
       }
 
       // New variants must use the purpose-built bulk-create mutation. The
@@ -378,9 +489,8 @@ const updateProduct = {
           };
           if (variant.price !== undefined) created.price = variant.price;
           if (variant.compareAtPrice !== undefined) created.compareAtPrice = variant.compareAtPrice;
-          if (variant.sku !== undefined) {
-            created.inventoryItem = { sku: variant.sku };
-          }
+          const inventoryItem = buildInventoryItemInput(variant);
+          if (inventoryItem) created.inventoryItem = inventoryItem;
           if (variant.barcode !== undefined) created.barcode = variant.barcode;
           return created;
         });
@@ -405,7 +515,7 @@ const updateProduct = {
               id title handle descriptionHtml vendor productType status tags
               category { id name fullName }
               variants(first: 100) {
-                edges { node { id title price compareAtPrice sku barcode } }
+                edges { node { ${variantSelection(wantsCost)} } }
               }
               images(first: 20) { edges { node { id url altText } } }
             }
@@ -418,7 +528,7 @@ const updateProduct = {
         return {
           product: {
             ...readData.product,
-            variants: readData.product.variants.edges.map((e: any) => e.node),
+            variants: readData.product.variants.edges.map((e: any) => formatVariant(e.node, wantsCost)),
             images: readData.product.images.edges.map((e: any) => e.node),
           },
         };
@@ -470,12 +580,11 @@ const updateProduct = {
         `;
 
         const bulkVariants = variantsToUpdate.map((variant) => {
-          const bulkVariant = { ...variant };
-          delete bulkVariant.optionValues;
-          if (bulkVariant.sku !== undefined) {
-            bulkVariant.inventoryItem = { sku: bulkVariant.sku };
-            delete bulkVariant.sku;
-          }
+          const { optionValues, sku, cost, ...bulkVariant } = variant as {
+            optionValues?: unknown; sku?: string; cost?: string; [key: string]: unknown;
+          };
+          const inventoryItem = buildInventoryItemInput({ sku, cost });
+          if (inventoryItem) bulkVariant.inventoryItem = inventoryItem;
           return bulkVariant;
         });
 
@@ -518,14 +627,7 @@ const updateProduct = {
               tags
               variants(first: 100) {
                 edges {
-                  node {
-                    id
-                    title
-                    price
-                    compareAtPrice
-                    sku
-                    barcode
-                  }
+                  node { ${variantSelection(wantsCost)} }
                 }
               }
               images(first: 20) {
@@ -550,7 +652,7 @@ const updateProduct = {
             category: { id: string; name: string; fullName: string } | null;
             status: string;
             tags: string[];
-            variants: { edges: Array<{ node: Record<string, unknown> }> };
+            variants: { edges: Array<{ node: VariantNode }> };
             images: { edges: Array<{ node: Record<string, unknown> }> };
           } | null;
         };
@@ -562,7 +664,7 @@ const updateProduct = {
         return {
           product: {
             ...readData.product,
-            variants: readData.product.variants.edges.map((e) => e.node),
+            variants: readData.product.variants.edges.map((e) => formatVariant(e.node, wantsCost)),
             images: readData.product.images.edges.map((e) => e.node),
           },
         };
@@ -574,6 +676,36 @@ const updateProduct = {
           originalSource: img.src,
           alt: img.altText || undefined,
         }));
+      }
+
+      // A rename on its own has nothing left to write. Read the product back
+      // so the caller sees the post-rename state instead of an empty
+      // productSet round-trip.
+      if (input.renameOption && !hasProductLevelChanges && variantsToUpdate.length === 0) {
+        const readQuery = gql`
+          query getRenamedProduct($id: ID!) {
+            product(id: $id) {
+              id title handle descriptionHtml vendor productType status tags
+              category { id name fullName }
+              options { id name }
+              variants(first: 100) {
+                edges { node { id title price compareAtPrice sku barcode } }
+              }
+              images(first: 20) { edges { node { id url altText } } }
+            }
+          }
+        `;
+        const readData = (await shopifyClient.request(readQuery, { id: productId })) as {
+          product: Record<string, any> | null;
+        };
+        if (!readData.product) throw new Error("Option rename succeeded but read-back returned no product");
+        return {
+          product: {
+            ...readData.product,
+            variants: readData.product.variants.edges.map((e: any) => e.node),
+            images: readData.product.images.edges.map((e: any) => e.node),
+          },
+        };
       }
 
       const variables = {
@@ -594,16 +726,7 @@ const updateProduct = {
             status: string;
             tags: string[];
             variants: {
-              edges: Array<{
-                node: {
-                  id: string;
-                  title: string;
-                  price: string;
-                  compareAtPrice: string | null;
-                  sku: string | null;
-                  barcode: string | null;
-                };
-              }>;
+              edges: Array<{ node: VariantNode }>;
             };
             images: {
               edges: Array<{
@@ -655,7 +778,7 @@ const updateProduct = {
           category: product.category,
           status: product.status,
           tags: product.tags,
-          variants: product.variants.edges.map((e) => e.node),
+          variants: product.variants.edges.map((e) => formatVariant(e.node, wantsCost)),
           images: product.images.edges.map((e) => e.node),
         },
       };

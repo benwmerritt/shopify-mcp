@@ -263,7 +263,7 @@ MYSHOPIFY_DOMAIN=your-store.myshopify.com
 ### Products
 - `products` — unified lookup/search/filter. Pass `id` for a single product; omit `id` to list/search with filters (`title`, `status`, `vendor`, `tag`, inventory, dates, `hasImages`, …). Returns the product's Shopify Standard Product Taxonomy `category` (`{id, name, fullName}`) in `slim`/`standard`/`full`. Page size capped at 100.
 - `create-product`
-- `update-product` — accepts `category` (Shopify Standard Product Taxonomy GID, `vp-*` prefix); the tool verifies the category actually stuck and throws a loud, actionable error if Shopify silently rejected the GID, instead of leaving you with a null `category`.
+- `update-product` — accepts `category` (Shopify Standard Product Taxonomy GID, `vp-*` prefix); the tool verifies the category actually stuck and throws a loud, actionable error if Shopify silently rejected the GID, instead of leaving you with a null `category`. Also takes `cost` (cost per item, on the simple form or per entry in `variants`; the response includes `cost` only when one was written, since reading it needs `read_inventory`) and `renameOption: {from, to}` to rename a product option in place without touching variant IDs.
 - `delete-product`
 - `delete-variant`
 - `delete-product-images`
