@@ -173,7 +173,9 @@ const updateProduct = {
     shopifyClient = client;
   },
 
-  execute: async (input: UpdateProductInput) => {
+  execute: async (
+    input: UpdateProductInput,
+  ): Promise<{ product: Record<string, any>; redirectNewHandle?: boolean }> => {
     try {
       const productId = normalizeProductId(input.id);
 
@@ -244,6 +246,22 @@ const updateProduct = {
         };
       }
 
+      // Validate the variant payload before any mutation runs, so a rejected
+      // combination cannot leave the product half-updated (e.g. option renamed
+      // but variants untouched, with the original name gone for a retry).
+      const variantsToCreate = (input.variants ?? []).filter(
+        (variant) => !variant.id && variant.optionValues !== undefined,
+      );
+      if (variantsToCreate.length > 0 && variantsToCreate.length !== (input.variants ?? []).length) {
+        throw new Error("New variants with optionValues cannot be mixed with variant updates");
+      }
+      const orphanVariants = (input.variants ?? []).filter(
+        (variant) => !variant.id && variant.optionValues === undefined,
+      );
+      if (orphanVariants.length > 0) {
+        throw new Error("each entry in variants needs an id (to update) or optionValues (to create)");
+      }
+
       // Rename a product option in place. Runs before any variant writes so
       // later option-value lookups see the new name. Shopify can return empty
       // userErrors without applying the rename, so the returned options are
@@ -299,111 +317,89 @@ const updateProduct = {
         input.cost !== undefined ||
         (input.variants ?? []).some((v) => v.cost !== undefined);
 
-      // First, fetch the product to get current variant IDs/options if needed
+      // First, fetch the product to get the first variant ID if needed
       let firstVariantId: string | null = null;
-      const variantOptionValues = new Map<
-        string,
-        Array<{ optionName: string; name: string }>
-      >();
       const hasSimpleVariantFields =
         input.price !== undefined || input.sku !== undefined ||
         input.compareAtPrice !== undefined || input.barcode !== undefined ||
         input.cost !== undefined;
 
-      if (hasSimpleVariantFields || input.variants?.some((variant) => variant.id)) {
-        // ProductSet requires optionValues even when updating an existing
-        // variant, so fetch and preserve each variant's current selections.
+      if (hasSimpleVariantFields) {
         const fetchQuery = gql`
           query getProduct($id: ID!) {
             product(id: $id) {
-              variants(first: 100) {
-                edges {
-                  node {
-                    id
-                    selectedOptions {
-                      name
-                      value
-                    }
-                  }
-                }
+              variants(first: 1) {
+                edges { node { id } }
               }
             }
           }
         `;
 
         const fetchData = await shopifyClient.request(fetchQuery, { id: productId }) as {
-          product: {
-            variants: {
-              edges: Array<{
-                node: {
-                  id: string;
-                  selectedOptions: Array<{ name: string; value: string }>;
-                };
-              }>;
-            };
-          } | null;
+          product: { variants: { edges: Array<{ node: { id: string } }> } } | null;
         };
 
-        const variantEdges = fetchData.product?.variants?.edges ?? [];
-        if (variantEdges[0]) {
-          firstVariantId = variantEdges[0].node.id;
-        }
-        for (const { node } of variantEdges) {
-          variantOptionValues.set(
-            node.id,
-            selectedOptionsToOptionValues(node.selectedOptions),
-          );
-        }
+        firstVariantId = fetchData.product?.variants?.edges?.[0]?.node.id ?? null;
       }
 
-      // Build the productSet mutation
-      const query = gql`
-        mutation productSet($input: ProductSetInput!, $synchronous: Boolean) {
-          productSet(input: $input, synchronous: $synchronous) {
-            product {
-              id
-              title
-              handle
-              descriptionHtml
-              vendor
-              productType
-              seo { title description }
-              category {
-                id
-                name
-                fullName
-              }
-              status
-              tags
-              variants(first: 100) {
-                edges {
-                  node { ${variantSelection(wantsCost)} }
-                }
-              }
-              images(first: 20) {
-                edges {
-                  node {
-                    id
-                    url
-                    altText
-                  }
-                }
-              }
-            }
-            userErrors {
-              field
-              message
-            }
-          }
+      const productSelection = `
+        id
+        title
+        handle
+        descriptionHtml
+        vendor
+        productType
+        seo { title description }
+        category { id name fullName }
+        status
+        tags
+        ${input.renameOption ? "options { id name }" : ""}
+        variants(first: 100) {
+          edges { node { ${variantSelection(wantsCost)} } }
+        }
+        images(first: 20) {
+          edges { node { id url altText } }
         }
       `;
 
-      // Build the product input
+      type ProductPayload = {
+        id: string;
+        title: string;
+        handle: string;
+        descriptionHtml: string;
+        vendor: string;
+        productType: string;
+        seo?: { title: string | null; description: string | null };
+        category: { id: string; name: string; fullName: string } | null;
+        status: string;
+        tags: string[];
+        options?: Array<{ id: string; name: string }>;
+        variants: { edges: Array<{ node: VariantNode }> };
+        images: { edges: Array<{ node: Record<string, unknown> }> };
+      };
+
+      const formatProduct = (product: ProductPayload) => ({
+        product: {
+          ...product,
+          variants: product.variants.edges.map((e) => formatVariant(e.node, wantsCost)),
+          images: product.images.edges.map((e) => e.node),
+        },
+      });
+
+      const readProduct = async (failure: string): Promise<ProductPayload> => {
+        const readData = (await shopifyClient.request(
+          gql`query getUpdatedProduct($id: ID!) { product(id: $id) { ${productSelection} } }`,
+          { id: productId },
+        )) as { product: ProductPayload | null };
+        if (!readData.product) throw new Error(failure);
+        return readData.product;
+      };
+
+      // Build the product-level input for productSet
       const productInput: Record<string, unknown> = {
         id: productId,
       };
 
-      // Add basic fields if provided
       if (input.title !== undefined) productInput.title = input.title;
       if (input.handle !== undefined) productInput.handle = input.handle;
       if (input.descriptionHtml !== undefined) productInput.descriptionHtml = input.descriptionHtml;
@@ -413,62 +409,46 @@ const updateProduct = {
       if (input.category !== undefined) productInput.category = input.category;
       if (input.tags !== undefined) productInput.tags = input.tags;
       if (input.status !== undefined) productInput.status = input.status;
+      if (input.images && input.images.length > 0) {
+        productInput.files = input.images.map(img => ({
+          originalSource: img.src,
+          alt: img.altText || undefined,
+        }));
+      }
 
-      // Handle variants
+      const hasProductLevelChanges = Object.keys(productInput).length > 1;
+
+      // Existing-variant updates. These never go through productSet:
+      // ProductSetInput.variants is a full sync (anything omitted is deleted)
+      // and requires productOptions on API 2026-01. productVariantsBulkUpdate
+      // touches only the listed variants.
       const variantsToUpdate: Array<Record<string, unknown>> = [];
 
-      // If simple variant fields provided, update first variant
       if (hasSimpleVariantFields && firstVariantId) {
-        const simpleVariant: Record<string, unknown> = {
-          id: firstVariantId,
-          optionValues: variantOptionValues.get(firstVariantId),
-        };
+        const simpleVariant: Record<string, unknown> = { id: firstVariantId };
         if (input.price !== undefined) simpleVariant.price = input.price;
         if (input.compareAtPrice !== undefined) simpleVariant.compareAtPrice = input.compareAtPrice;
-        if (input.sku !== undefined) simpleVariant.sku = input.sku;
         if (input.barcode !== undefined) simpleVariant.barcode = input.barcode;
-        if (input.cost !== undefined) simpleVariant.cost = input.cost;
+        const inventoryItem = buildInventoryItemInput(input);
+        if (inventoryItem) simpleVariant.inventoryItem = inventoryItem;
         variantsToUpdate.push(simpleVariant);
       }
 
-      // Add explicitly provided variants
-      if (input.variants) {
-        for (const variant of input.variants) {
-          const v: Record<string, unknown> = {};
-          if (variant.id) {
-            const variantId = normalizeVariantId(variant.id);
-            v.id = variantId;
-            v.optionValues = variantOptionValues.get(variantId);
-          }
-          if (variant.price !== undefined) v.price = variant.price;
-          if (variant.compareAtPrice !== undefined) v.compareAtPrice = variant.compareAtPrice;
-          if (variant.sku !== undefined) v.sku = variant.sku;
-          if (variant.barcode !== undefined) v.barcode = variant.barcode;
-          if (variant.cost !== undefined) v.cost = variant.cost;
-          variantsToUpdate.push(v);
-        }
-      }
-
-      if (variantsToUpdate.length > 0) {
-        // ProductVariantSetInput takes sku at the top level but cost only via
-        // inventoryItem, so move cost across for the productSet path.
-        productInput.variants = variantsToUpdate.map((variant) => {
-          const { cost, ...rest } = variant;
-          if (cost === undefined) return rest;
-          return { ...rest, inventoryItem: { cost } };
-        });
+      for (const variant of input.variants ?? []) {
+        if (!variant.id) continue;
+        const v: Record<string, unknown> = { id: normalizeVariantId(variant.id) };
+        if (variant.price !== undefined) v.price = variant.price;
+        if (variant.compareAtPrice !== undefined) v.compareAtPrice = variant.compareAtPrice;
+        if (variant.barcode !== undefined) v.barcode = variant.barcode;
+        const inventoryItem = buildInventoryItemInput(variant);
+        if (inventoryItem) v.inventoryItem = inventoryItem;
+        variantsToUpdate.push(v);
       }
 
       // New variants must use the purpose-built bulk-create mutation. The
       // public ProductSetInput schema does not expose variants[].optionValues
       // for additional variants on API 2026-01.
-      const variantsToCreate = (input.variants ?? []).filter(
-        (variant) => !variant.id && variant.optionValues !== undefined,
-      );
       if (variantsToCreate.length > 0) {
-        if (variantsToCreate.length !== (input.variants ?? []).length) {
-          throw new Error("New variants with optionValues cannot be mixed with variant updates");
-        }
         const bulkCreateQuery = gql`
           mutation productVariantsBulkCreate(
             $productId: ID!
@@ -509,51 +489,53 @@ const updateProduct = {
               .map((e) => `${e.field.join(".")}: ${e.message}`).join(", ")}`,
           );
         }
-        const readQuery = gql`
-          query getCreatedVariants($id: ID!) {
-            product(id: $id) {
-              id title handle descriptionHtml vendor productType status tags
-              category { id name fullName }
-              variants(first: 100) {
-                edges { node { ${variantSelection(wantsCost)} } }
-              }
-              images(first: 20) { edges { node { id url altText } } }
+        return formatProduct(await readProduct("Variant creation succeeded but read-back returned no product"));
+      }
+
+      // Product-level fields via productSet (no variants in the payload).
+      let product: ProductPayload | null = null;
+      if (hasProductLevelChanges) {
+        const query = gql`
+          mutation productSet($input: ProductSetInput!, $synchronous: Boolean) {
+            productSet(input: $input, synchronous: $synchronous) {
+              product { ${productSelection} }
+              userErrors { field message }
             }
           }
         `;
-        const readData = (await shopifyClient.request(readQuery, { id: productId })) as {
-          product: Record<string, any> | null;
+
+        const data = (await shopifyClient.request(query, {
+          input: productInput,
+          synchronous: true,
+        })) as {
+          productSet: {
+            product: ProductPayload | null;
+            userErrors: Array<{ field: string[] | null; message: string }>;
+          };
         };
-        if (!readData.product) throw new Error("Variant creation succeeded but read-back returned no product");
-        return {
-          product: {
-            ...readData.product,
-            variants: readData.product.variants.edges.map((e: any) => formatVariant(e.node, wantsCost)),
-            images: readData.product.images.edges.map((e: any) => e.node),
-          },
-        };
+
+        if (data.productSet.userErrors.length > 0) {
+          throw new Error(
+            `Failed to update product: ${data.productSet.userErrors
+              .map((e) => (e.field?.length ? `${e.field.join(".")}: ${e.message}` : e.message))
+              .join(", ")}`
+          );
+        }
+
+        if (!data.productSet.product) {
+          throw new Error("Product update returned no product - check if the ID is valid");
+        }
+
+        product = data.productSet.product;
+
+        // Loud-fail if the caller asked to set the category and Shopify silently
+        // ignored it (invalid taxonomy GID, wrong namespace, etc).
+        if (input.category !== undefined) {
+          verifyCategorySet(product, input.category);
+        }
       }
 
-      const hasProductLevelChanges =
-        input.title !== undefined ||
-        input.handle !== undefined ||
-        input.descriptionHtml !== undefined ||
-        input.seo !== undefined ||
-        input.vendor !== undefined ||
-        input.productType !== undefined ||
-        input.category !== undefined ||
-        input.tags !== undefined ||
-        input.status !== undefined ||
-        (input.images !== undefined && input.images.length > 0);
-
-      // productSet requires productOptions when variants are included on API
-      // 2026-01, even for a narrow SKU/price edit. Route existing-variant-only
-      // updates through the purpose-built bulk mutation instead.
-      if (
-        !hasProductLevelChanges &&
-        variantsToUpdate.length > 0 &&
-        variantsToUpdate.every((variant) => variant.id)
-      ) {
+      if (variantsToUpdate.length > 0) {
         const bulkQuery = gql`
           mutation productVariantsBulkUpdate(
             $productId: ID!
@@ -563,225 +545,45 @@ const updateProduct = {
               productId: $productId
               variants: $variants
             ) {
-              productVariants {
-                id
-                title
-                price
-                compareAtPrice
-                sku
-                barcode
-              }
-              userErrors {
-                field
-                message
-              }
+              productVariants { id title price compareAtPrice sku barcode }
+              userErrors { field message }
             }
           }
         `;
 
-        const bulkVariants = variantsToUpdate.map((variant) => {
-          const { optionValues, sku, cost, ...bulkVariant } = variant as {
-            optionValues?: unknown; sku?: string; cost?: string; [key: string]: unknown;
-          };
-          const inventoryItem = buildInventoryItemInput({ sku, cost });
-          if (inventoryItem) bulkVariant.inventoryItem = inventoryItem;
-          return bulkVariant;
-        });
-
         const bulkData = (await shopifyClient.request(bulkQuery, {
           productId,
-          variants: bulkVariants,
+          variants: variantsToUpdate,
         })) as {
           productVariantsBulkUpdate: {
-            productVariants: Array<{
-              id: string;
-              title: string;
-              price: string;
-              compareAtPrice: string | null;
-              sku: string | null;
-              barcode: string | null;
-            }>;
-            userErrors: Array<{ field: string[]; message: string }>;
+            productVariants: Array<Record<string, unknown>>;
+            userErrors: Array<{ field: string[] | null; message: string }>;
           };
         };
 
         if (bulkData.productVariantsBulkUpdate.userErrors.length > 0) {
           throw new Error(
             `Failed to update product variants: ${bulkData.productVariantsBulkUpdate.userErrors
-              .map((e) => `${e.field.join(".")}: ${e.message}`)
+              .map((e) => (e.field?.length ? `${e.field.join(".")}: ${e.message}` : e.message))
               .join(", ")}`
           );
         }
 
-        const readQuery = gql`
-          query getUpdatedProduct($id: ID!) {
-            product(id: $id) {
-              id
-              title
-              handle
-              descriptionHtml
-              vendor
-              productType
-              category { id name fullName }
-              status
-              tags
-              variants(first: 100) {
-                edges {
-                  node { ${variantSelection(wantsCost)} }
-                }
-              }
-              images(first: 20) {
-                edges {
-                  node { id url altText }
-                }
-              }
-            }
-          }
-        `;
+        // productSet's payload predates the variant write, so read back.
+        product = await readProduct("Product update succeeded but read-back returned no product");
+      }
 
-        const readData = (await shopifyClient.request(readQuery, {
-          id: productId,
-        })) as {
-          product: {
-            id: string;
-            title: string;
-            handle: string;
-            descriptionHtml: string;
-            vendor: string;
-            productType: string;
-            category: { id: string; name: string; fullName: string } | null;
-            status: string;
-            tags: string[];
-            variants: { edges: Array<{ node: VariantNode }> };
-            images: { edges: Array<{ node: Record<string, unknown> }> };
-          } | null;
-        };
-
-        if (!readData.product) {
-          throw new Error("Product update succeeded but read-back returned no product");
+      if (!product) {
+        if (input.renameOption) {
+          // A rename on its own has nothing left to write; return the
+          // post-rename state.
+          product = await readProduct("Option rename succeeded but read-back returned no product");
+        } else {
+          throw new Error("No changes provided - pass at least one product or variant field to update");
         }
-
-        return {
-          product: {
-            ...readData.product,
-            variants: readData.product.variants.edges.map((e) => formatVariant(e.node, wantsCost)),
-            images: readData.product.images.edges.map((e) => e.node),
-          },
-        };
       }
 
-      // Handle images via URL
-      if (input.images && input.images.length > 0) {
-        productInput.files = input.images.map(img => ({
-          originalSource: img.src,
-          alt: img.altText || undefined,
-        }));
-      }
-
-      // A rename on its own has nothing left to write. Read the product back
-      // so the caller sees the post-rename state instead of an empty
-      // productSet round-trip.
-      if (input.renameOption && !hasProductLevelChanges && variantsToUpdate.length === 0) {
-        const readQuery = gql`
-          query getRenamedProduct($id: ID!) {
-            product(id: $id) {
-              id title handle descriptionHtml vendor productType status tags
-              category { id name fullName }
-              options { id name }
-              variants(first: 100) {
-                edges { node { id title price compareAtPrice sku barcode } }
-              }
-              images(first: 20) { edges { node { id url altText } } }
-            }
-          }
-        `;
-        const readData = (await shopifyClient.request(readQuery, { id: productId })) as {
-          product: Record<string, any> | null;
-        };
-        if (!readData.product) throw new Error("Option rename succeeded but read-back returned no product");
-        return {
-          product: {
-            ...readData.product,
-            variants: readData.product.variants.edges.map((e: any) => e.node),
-            images: readData.product.images.edges.map((e: any) => e.node),
-          },
-        };
-      }
-
-      const variables = {
-        input: productInput,
-        synchronous: true,
-      };
-
-      const data = (await shopifyClient.request(query, variables)) as {
-        productSet: {
-          product: {
-            id: string;
-            title: string;
-            handle: string;
-            descriptionHtml: string;
-            vendor: string;
-            productType: string;
-            category: { id: string; name: string; fullName: string } | null;
-            status: string;
-            tags: string[];
-            variants: {
-              edges: Array<{ node: VariantNode }>;
-            };
-            images: {
-              edges: Array<{
-                node: {
-                  id: string;
-                  url: string;
-                  altText: string | null;
-                };
-              }>;
-            };
-          } | null;
-          userErrors: Array<{
-            field: string[];
-            message: string;
-          }>;
-        };
-      };
-
-      // Check for errors
-      if (data.productSet.userErrors.length > 0) {
-        throw new Error(
-          `Failed to update product: ${data.productSet.userErrors
-            .map((e) => `${e.field.join(".")}: ${e.message}`)
-            .join(", ")}`
-        );
-      }
-
-      if (!data.productSet.product) {
-        throw new Error("Product update returned no product - check if the ID is valid");
-      }
-
-      // Format response
-      const product = data.productSet.product;
-
-      // Loud-fail if the caller asked to set the category and Shopify silently
-      // ignored it (invalid taxonomy GID, wrong namespace, etc).
-      if (input.category !== undefined) {
-        verifyCategorySet(product, input.category);
-      }
-
-      return {
-        product: {
-          id: product.id,
-          title: product.title,
-          handle: product.handle,
-          descriptionHtml: product.descriptionHtml,
-          vendor: product.vendor,
-          productType: product.productType,
-          category: product.category,
-          status: product.status,
-          tags: product.tags,
-          variants: product.variants.edges.map((e) => formatVariant(e.node, wantsCost)),
-          images: product.images.edges.map((e) => e.node),
-        },
-      };
+      return formatProduct(product);
     } catch (error) {
       console.error("Error updating product:", error);
       throw new Error(
