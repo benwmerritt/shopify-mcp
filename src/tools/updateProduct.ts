@@ -261,6 +261,18 @@ const updateProduct = {
       if (orphanVariants.length > 0) {
         throw new Error("each entry in variants needs an id (to update) or optionValues (to create)");
       }
+      // The simple fields target "the first variant", but productVariantsBulkCreate
+      // deletes a lone "Default Title" variant under its default strategy, so the
+      // ID resolved before creation may be gone by the time the update runs.
+      const hasSimpleVariantFields =
+        input.price !== undefined || input.sku !== undefined ||
+        input.compareAtPrice !== undefined || input.barcode !== undefined ||
+        input.cost !== undefined;
+      if (variantsToCreate.length > 0 && hasSimpleVariantFields) {
+        throw new Error(
+          "Top-level price/sku/compareAtPrice/barcode/cost cannot be combined with new variants - put those fields on a variants[] entry with an id instead",
+        );
+      }
 
       // Rename a product option in place. Runs before any variant writes so
       // later option-value lookups see the new name. Shopify can return empty
@@ -319,10 +331,6 @@ const updateProduct = {
 
       // First, fetch the product to get the first variant ID if needed
       let firstVariantId: string | null = null;
-      const hasSimpleVariantFields =
-        input.price !== undefined || input.sku !== undefined ||
-        input.compareAtPrice !== undefined || input.barcode !== undefined ||
-        input.cost !== undefined;
 
       if (hasSimpleVariantFields) {
         const fetchQuery = gql`
