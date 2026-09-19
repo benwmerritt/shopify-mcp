@@ -68,7 +68,7 @@ async function startRemote(readOnly, key = 'test-key') {
     child.once('exit', code => { clearTimeout(timeout); reject(new Error(`Exited ${code}: ${logs}`)); });
     child.stderr.on('data', chunk => {
       logs += chunk;
-      const match = logs.match(/Health: (http:\/\/localhost:\d+)\/health/);
+      const match = logs.match(/Health: (http:\/\/(?:localhost|127\.0\.0\.1):\d+)\/health/);
       if (match) { clearTimeout(timeout); resolve(match[1]); }
     });
   }).catch(error => { child.kill('SIGKILL'); throw error; });
@@ -201,6 +201,7 @@ test('no-key development setup remains usable on loopback', { timeout: 15000 }, 
   const server = await startRemote(false, '');
   const client = new Client(info, modernOptions);
   try {
+    assert.equal(new URL(server.url).hostname, '127.0.0.1');
     assert.equal(server.listeningAddress, '127.0.0.1');
     await client.connect(new StreamableHTTPClientTransport(new URL(`${server.url}/mcp`)));
     await verifyTools(client, false, true);

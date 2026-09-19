@@ -2924,11 +2924,12 @@ async function startServer(
       console.error(`Shopify MCP Server running in REMOTE mode`);
       const address = httpServer.address();
       const listeningPort = typeof address === "object" && address ? address.port : PORT;
+      const listeningHost = process.env.MCP_API_KEY ? "localhost" : "127.0.0.1";
       if (typeof address === "object" && address) {
         console.error(`  Listening address: ${address.address}`);
       }
-      console.error(`  Health: http://localhost:${listeningPort}/health`);
-      console.error(`  MCP:    http://localhost:${listeningPort}/mcp`);
+      console.error(`  Health: http://${listeningHost}:${listeningPort}/health`);
+      console.error(`  MCP:    http://${listeningHost}:${listeningPort}/mcp`);
       console.error(`  Public: ${publicAppUrl}`);
       console.error(`  Store:  ${domain}`);
     });
