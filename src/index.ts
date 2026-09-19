@@ -1,10 +1,9 @@
 #!/usr/bin/env node
 
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-// import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
-import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
-// import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
+import { McpServer, createMcpHandler } from "@modelcontextprotocol/server";
+import { toNodeHandler } from "@modelcontextprotocol/node";
+import { serveStdio } from "@modelcontextprotocol/server/stdio";
+import { SSEServerTransport } from "@modelcontextprotocol/server-legacy/sse";
 import express, { Request, Response } from "express";
 import { mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -262,9 +261,9 @@ async function startServer(
 
     // ==================== MERGED PRODUCT TOOL ====================
     // Replaces: get-products, get-product-by-id, search-products
-    server.tool(
+    server.registerTool(
       "products",
-      {
+      { inputSchema: z.object({
         id: z
           .string()
           .optional()
@@ -333,7 +332,7 @@ async function startServer(
           .describe(
             "Fields to return: 'slim' (default), 'standard', 'full', or array of field names",
           ),
-      },
+      }) },
       async (args) => {
         const result = await products.execute(args);
         return {
@@ -342,16 +341,16 @@ async function startServer(
       },
     );
 
-    server.tool(
+    server.registerTool(
       "get-customers",
-      {
+      { inputSchema: z.object({
         searchQuery: z.string().optional(),
         limit: z.number().default(10),
         cursor: z
           .string()
           .optional()
           .describe("Pagination cursor for fetching next page"),
-      },
+      }) },
       async (args) => {
         const result = await getCustomers.execute(args);
         return {
@@ -362,9 +361,9 @@ async function startServer(
 
     // ==================== MERGED ORDERS TOOL ====================
     // Replaces: get-orders, get-order-by-id, get-customer-orders
-    server.tool(
+    server.registerTool(
       "orders",
-      {
+      { inputSchema: z.object({
         id: z
           .string()
           .optional()
@@ -387,7 +386,7 @@ async function startServer(
           .string()
           .optional()
           .describe("Pagination cursor for fetching next page"),
-      },
+      }) },
       async (args) => {
         const result = await orders.execute(args);
         return {
@@ -397,9 +396,9 @@ async function startServer(
     );
 
     // Add the updateOrder tool
-    server.tool(
+    server.registerTool(
       "update-order",
-      {
+      { inputSchema: z.object({
         id: z.string().min(1),
         tags: z.array(z.string()).optional(),
         email: z.string().email().optional(),
@@ -437,7 +436,7 @@ async function startServer(
             zip: z.string().optional(),
           })
           .optional(),
-      },
+      }) },
       async (args) => {
         const result = await updateOrder.execute(args);
         return {
@@ -447,9 +446,9 @@ async function startServer(
     );
 
     // Add the updateCustomer tool
-    server.tool(
+    server.registerTool(
       "update-customer",
-      {
+      { inputSchema: z.object({
         id: z
           .string()
           .regex(/^\d+$/, "Customer ID must be numeric")
@@ -472,7 +471,7 @@ async function startServer(
             }),
           )
           .optional(),
-      },
+      }) },
       async (args) => {
         const result = await updateCustomer.execute(args);
         return {
@@ -483,9 +482,9 @@ async function startServer(
 
     // Add the createProduct tool (enhanced with variants, pricing, images)
     // Note: weight must be set separately via inventory item update
-    server.tool(
+    server.registerTool(
       "create-product",
-      {
+      { inputSchema: z.object({
         // Basic product fields
         title: z.string().min(1),
         descriptionHtml: z.string().optional(),
@@ -525,7 +524,7 @@ async function startServer(
             }),
           )
           .optional(),
-      },
+      }) },
       async (args) => {
         const result = await createProduct.execute(args);
         return {
@@ -536,9 +535,9 @@ async function startServer(
 
     // Add the updateProduct tool (for mass cleanup of imported products)
     // Note: weight must be set separately via inventory item update
-    server.tool(
+    server.registerTool(
       "update-product",
-      {
+      { inputSchema: z.object({
         // REQUIRED - product ID
         id: z.string().min(1),
 
@@ -597,7 +596,7 @@ async function startServer(
             }),
           )
           .optional(),
-      },
+      }) },
       async (args) => {
         const result = await updateProduct.execute(args);
         return {
@@ -606,15 +605,15 @@ async function startServer(
       },
     );
 
-    server.tool(
+    server.registerTool(
       "create-product-option",
-      {
+      { inputSchema: z.object({
         productId: z.string().min(1),
         name: z.string().min(1),
         values: z.array(z.string().min(1)).min(1),
         position: z.number().int().positive().optional(),
         variantStrategy: z.enum(["LEAVE_AS_IS", "CREATE"]).default("LEAVE_AS_IS"),
-      },
+      }) },
       async (args) => {
         const result = await createProductOption.execute(args);
         return { content: [{ type: "text", text: JSON.stringify(result) }] };
@@ -624,14 +623,14 @@ async function startServer(
     // ==================== DATA CLEANUP TOOLS ====================
 
     // Delete a single product
-    server.tool(
+    server.registerTool(
       "delete-product",
-      {
+      { inputSchema: z.object({
         productId: z
           .string()
           .min(1)
           .describe("Product ID (can be numeric or full GID)"),
-      },
+      }) },
       async (args) => {
         const result = await deleteProduct.execute(args);
         return {
@@ -641,9 +640,9 @@ async function startServer(
     );
 
     // Delete a product variant
-    server.tool(
+    server.registerTool(
       "delete-variant",
-      {
+      { inputSchema: z.object({
         productId: z
           .string()
           .min(1)
@@ -652,7 +651,7 @@ async function startServer(
           .string()
           .min(1)
           .describe("Variant ID to delete (can be numeric or full GID)"),
-      },
+      }) },
       async (args) => {
         const result = await deleteVariant.execute(args);
         return {
@@ -662,9 +661,9 @@ async function startServer(
     );
 
     // Delete product images
-    server.tool(
+    server.registerTool(
       "delete-product-images",
-      {
+      { inputSchema: z.object({
         productId: z
           .string()
           .min(1)
@@ -673,7 +672,7 @@ async function startServer(
           .array(z.string().min(1))
           .min(1)
           .describe("Array of image/media IDs to delete"),
-      },
+      }) },
       async (args) => {
         const result = await deleteProductImages.execute(args);
         return {
@@ -683,9 +682,9 @@ async function startServer(
     );
 
     // Bulk update products
-    server.tool(
+    server.registerTool(
       "bulk-update-products",
-      {
+      { inputSchema: z.object({
         productIds: z
           .array(z.string().min(1))
           .min(1)
@@ -708,7 +707,7 @@ async function startServer(
             .optional()
             .describe("Remove these specific tags"),
         }),
-      },
+      }) },
       async (args) => {
         const result = await bulkUpdateProducts.execute(args);
         return {
@@ -718,15 +717,15 @@ async function startServer(
     );
 
     // Bulk delete products
-    server.tool(
+    server.registerTool(
       "bulk-delete-products",
-      {
+      { inputSchema: z.object({
         productIds: z
           .array(z.string().min(1))
           .min(1)
           .max(100)
           .describe("Array of product IDs to delete (max 100)"),
-      },
+      }) },
       async (args) => {
         const result = await bulkDeleteProducts.execute(args);
         return {
@@ -738,9 +737,9 @@ async function startServer(
     // ==================== COLLECTION TOOLS ====================
 
     // Get collections
-    server.tool(
+    server.registerTool(
       "get-collections",
-      {
+      { inputSchema: z.object({
         title: z
           .string()
           .optional()
@@ -757,7 +756,7 @@ async function startServer(
           .string()
           .optional()
           .describe("Pagination cursor for fetching next page"),
-      },
+      }) },
       async (args) => {
         const result = await getCollections.execute(args);
         return {
@@ -767,9 +766,9 @@ async function startServer(
     );
 
     // Manage collection products (add/remove/list)
-    server.tool(
+    server.registerTool(
       "manage-collection-products",
-      {
+      { inputSchema: z.object({
         collectionId: z
           .string()
           .min(1)
@@ -779,7 +778,7 @@ async function startServer(
           .array(z.string())
           .optional()
           .describe("Product IDs to add or remove (required for add/remove)"),
-      },
+      }) },
       async (args) => {
         const result = await manageCollectionProducts.execute(args);
         return {
@@ -789,9 +788,9 @@ async function startServer(
     );
 
     // Create collection (custom or smart)
-    server.tool(
+    server.registerTool(
       "create-collection",
-      {
+      { inputSchema: z.object({
         title: z.string().min(1).describe("Collection title"),
         descriptionHtml: z.string().optional().describe("HTML description"),
         handle: z
@@ -854,7 +853,7 @@ async function startServer(
             "PRICE_ASC",
           ])
           .optional(),
-      },
+      }) },
       async (args) => {
         const result = await createCollection.execute(args);
         return {
@@ -864,9 +863,9 @@ async function startServer(
     );
 
     // Update collection
-    server.tool(
+    server.registerTool(
       "update-collection",
-      {
+      { inputSchema: z.object({
         id: z.string().min(1).describe("Collection ID to update"),
         title: z.string().optional().describe("New collection title"),
         descriptionHtml: z.string().optional().describe("New HTML description"),
@@ -923,7 +922,7 @@ async function startServer(
             "PRICE_ASC",
           ])
           .optional(),
-      },
+      }) },
       async (args) => {
         const result = await updateCollection.execute(args);
         return {
@@ -933,11 +932,11 @@ async function startServer(
     );
 
     // Delete collection
-    server.tool(
+    server.registerTool(
       "delete-collection",
-      {
+      { inputSchema: z.object({
         collectionId: z.string().min(1).describe("Collection ID to delete"),
-      },
+      }) },
       async (args) => {
         const result = await deleteCollection.execute(args);
         return {
@@ -949,9 +948,9 @@ async function startServer(
     // ==================== INVENTORY TOOLS ====================
 
     // Get inventory levels
-    server.tool(
+    server.registerTool(
       "get-inventory-levels",
-      {
+      { inputSchema: z.object({
         productId: z
           .string()
           .optional()
@@ -965,7 +964,7 @@ async function startServer(
           .string()
           .optional()
           .describe("Pagination cursor for fetching next page"),
-      },
+      }) },
       async (args) => {
         const result = await getInventoryLevels.execute(args);
         return {
@@ -975,9 +974,9 @@ async function startServer(
     );
 
     // Update inventory
-    server.tool(
+    server.registerTool(
       "update-inventory",
-      {
+      { inputSchema: z.object({
         inventoryItemId: z
           .string()
           .min(1)
@@ -1016,7 +1015,7 @@ async function startServer(
           ])
           .default("correction")
           .describe("Reason for the inventory change"),
-      },
+      }) },
       async (args) => {
         const result = await updateInventory.execute(args);
         return {
@@ -1025,9 +1024,9 @@ async function startServer(
       },
     );
 
-    server.tool(
+    server.registerTool(
       "update-inventory-item-customs",
-      {
+      { inputSchema: z.object({
         inventoryItemId: z
           .string()
           .refine(
@@ -1055,7 +1054,7 @@ async function startServer(
           .nullable()
           .optional()
           .describe("Harmonized system code (at least six digits), or null to clear"),
-      },
+      }) },
       async (args) => {
         const result = await updateInventoryItemCustoms.execute(args);
         return {
@@ -1064,9 +1063,9 @@ async function startServer(
       },
     );
 
-    server.tool(
+    server.registerTool(
       "update-inventory-item-shipping",
-      {
+      { inputSchema: z.object({
         inventoryItemId: z
           .string()
           .refine(
@@ -1090,7 +1089,7 @@ async function startServer(
           .boolean()
           .optional()
           .describe("Whether the inventory item requires shipping"),
-      },
+      }) },
       async (args) => {
         const result = await updateInventoryItemShipping.execute(args);
         return {
@@ -1102,9 +1101,9 @@ async function startServer(
     // ==================== METAFIELD TOOLS ====================
 
     // Get metafields
-    server.tool(
+    server.registerTool(
       "get-metafields",
-      {
+      { inputSchema: z.object({
         ownerType: z
           .enum([
             "PRODUCT",
@@ -1147,7 +1146,7 @@ async function startServer(
           .describe(
             "Also return ALL metafield definitions for this owner type, merged with current values, so unfilled/empty fields are included (value:null, isSet:false when empty)",
           ),
-      },
+      }) },
       async (args) => {
         const result = await getMetafields.execute(args);
         return {
@@ -1157,14 +1156,14 @@ async function startServer(
     );
 
     // Delete metafield
-    server.tool(
+    server.registerTool(
       "delete-metafield",
-      {
+      { inputSchema: z.object({
         metafieldId: z
           .string()
           .min(1)
           .describe("Metafield ID to delete (can be numeric or full GID)"),
-      },
+      }) },
       async (args) => {
         const result = await deleteMetafield.execute(args);
         return {
@@ -1174,9 +1173,9 @@ async function startServer(
     );
 
     // Set metafield (create or update)
-    server.tool(
+    server.registerTool(
       "set-metafield",
-      {
+      { inputSchema: z.object({
         ownerId: z
           .string()
           .min(1)
@@ -1245,7 +1244,7 @@ async function startServer(
           .describe(
             "Metafield type. Optional when a definition exists (recommended); Shopify will use the definition type. For `link`, pass a JSON string like {\"text\":\"Learn more\",\"url\":\"https://example.com\"}.",
           ),
-      },
+      }) },
       async (args) => {
         const result = await setMetafield.execute(args);
         return {
@@ -1255,9 +1254,9 @@ async function startServer(
     );
 
     // Bulk-set SKU and/or metafields across variants of one product (one API call)
-    server.tool(
+    server.registerTool(
       "bulk-set-variant-metafields",
-      {
+      { inputSchema: z.object({
         productId: z
           .string()
           .min(1)
@@ -1344,7 +1343,7 @@ async function startServer(
           .describe(
             "When true (default), valid variants save even if others in the batch fail; failures appear in userErrors.",
           ),
-      },
+      }) },
       async (args) => {
         const result = await bulkSetVariantMetafields.execute(args);
         return {
@@ -1354,9 +1353,9 @@ async function startServer(
     );
 
     // List metafield definitions
-    server.tool(
+    server.registerTool(
       "list-metafield-definitions",
-      {
+      { inputSchema: z.object({
         ownerType: z
           .enum([
             "PRODUCT",
@@ -1375,7 +1374,7 @@ async function startServer(
           .string()
           .optional()
           .describe("Pagination cursor for fetching the next page"),
-      },
+      }) },
       async (args) => {
         const result = await listMetafieldDefinitions.execute(args);
         return {
@@ -1385,9 +1384,9 @@ async function startServer(
     );
 
     // Create a metafield definition
-    server.tool(
+    server.registerTool(
       "create-metafield-definition",
-      {
+      { inputSchema: z.object({
         name: z.string().min(1).describe("Human-readable metafield definition name"),
         namespace: z
           .string()
@@ -1410,7 +1409,7 @@ async function startServer(
         validations: z
           .array(z.object({ name: z.string().min(1), value: z.string() }))
           .optional(),
-      },
+      }) },
       async (args) => {
         const result = await createMetafieldDefinition.execute(args);
         return {
@@ -1420,9 +1419,9 @@ async function startServer(
     );
 
     // Resolve a metafield's selectable options in one call
-    server.tool(
+    server.registerTool(
       "get-metafield-options",
-      {
+      { inputSchema: z.object({
         definitionId: z
           .string()
           .optional()
@@ -1456,7 +1455,7 @@ async function startServer(
           .string()
           .optional()
           .describe("Pagination cursor for paging through metaobject options"),
-      },
+      }) },
       async (args) => {
         const result = await getMetafieldOptions.execute(args);
         return {
@@ -1468,9 +1467,9 @@ async function startServer(
     // ==================== METAOBJECT TOOLS ====================
 
     // List metaobject definitions
-    server.tool(
+    server.registerTool(
       "list-metaobject-definitions",
-      {
+      { inputSchema: z.object({
         limit: z
           .number()
           .default(25)
@@ -1481,7 +1480,7 @@ async function startServer(
           .string()
           .optional()
           .describe("Pagination cursor for fetching the next page"),
-      },
+      }) },
       async (args) => {
         const result = await listMetaobjectDefinitions.execute(args);
         return {
@@ -1491,16 +1490,16 @@ async function startServer(
     );
 
     // Get metaobject definition by type
-    server.tool(
+    server.registerTool(
       "get-metaobject-definition",
-      {
+      { inputSchema: z.object({
         type: z
           .string()
           .min(1)
           .describe(
             "Metaobject definition type to inspect (for example 'size_chart')",
           ),
-      },
+      }) },
       async (args) => {
         const result = await getMetaobjectDefinition.execute(args);
         return {
@@ -1510,9 +1509,9 @@ async function startServer(
     );
 
     // Add fields to an existing metaobject definition (additive-only)
-    server.tool(
+    server.registerTool(
       "update-metaobject-definition",
-      {
+      { inputSchema: z.object({
         id: z.string().min(1).describe("Metaobject definition global ID"),
         fields: z
           .array(
@@ -1528,7 +1527,7 @@ async function startServer(
             }),
           )
           .min(1),
-      },
+      }) },
       async (args) => {
         const result = await updateMetaobjectDefinition.execute(args);
         return {
@@ -1538,9 +1537,9 @@ async function startServer(
     );
 
     // Create metaobject entry
-    server.tool(
+    server.registerTool(
       "create-metaobject",
-      {
+      { inputSchema: z.object({
         type: z
           .string()
           .min(1)
@@ -1570,7 +1569,7 @@ async function startServer(
           .describe(
             "Publish status for publishable definitions. Defaults to Shopify's DRAFT if omitted; pass ACTIVE to publish immediately.",
           ),
-      },
+      }) },
       async (args) => {
         const result = await createMetaobject.execute(args);
         return {
@@ -1580,9 +1579,9 @@ async function startServer(
     );
 
     // Update an existing metaobject entry's fields
-    server.tool(
+    server.registerTool(
       "update-metaobject",
-      {
+      { inputSchema: z.object({
         id: z
           .string()
           .min(1)
@@ -1612,7 +1611,7 @@ async function startServer(
           .describe(
             "Set publish status. ACTIVE publishes a draft entry; DRAFT unpublishes.",
           ),
-      },
+      }) },
       async (args) => {
         const result = await updateMetaobject.execute(args);
         return {
@@ -1622,14 +1621,14 @@ async function startServer(
     );
 
     // Delete a metaobject entry
-    server.tool(
+    server.registerTool(
       "delete-metaobject",
-      {
+      { inputSchema: z.object({
         id: z
           .string()
           .min(1)
           .describe("Metaobject entry ID to delete (numeric or full GID)"),
-      },
+      }) },
       async (args) => {
         const result = await deleteMetaobject.execute(args);
         return {
@@ -1639,9 +1638,9 @@ async function startServer(
     );
 
     // List metaobject entries
-    server.tool(
+    server.registerTool(
       "list-metaobjects",
-      {
+      { inputSchema: z.object({
         type: z
           .string()
           .min(1)
@@ -1660,7 +1659,7 @@ async function startServer(
           .describe(
             "Filter the fetched page to only ACTIVE or DRAFT entries (client-side). status is always returned on each entry regardless.",
           ),
-      },
+      }) },
       async (args) => {
         const result = await listMetaobjects.execute(args);
         return {
@@ -1670,14 +1669,14 @@ async function startServer(
     );
 
     // Get metaobject entry by ID
-    server.tool(
+    server.registerTool(
       "get-metaobject",
-      {
+      { inputSchema: z.object({
         id: z
           .string()
           .min(1)
           .describe("Metaobject ID (can be numeric or full GID)"),
-      },
+      }) },
       async (args) => {
         const result = await getMetaobject.execute(args);
         return {
@@ -1689,9 +1688,9 @@ async function startServer(
     // ==================== LOCATION TOOLS ====================
 
     // Get locations
-    server.tool(
+    server.registerTool(
       "get-locations",
-      {
+      { inputSchema: z.object({
         includeInactive: z
           .boolean()
           .default(false)
@@ -1704,7 +1703,7 @@ async function startServer(
           .number()
           .default(50)
           .describe("Maximum number of locations to return"),
-      },
+      }) },
       async (args) => {
         const result = await getLocations.execute(args);
         return {
@@ -1716,9 +1715,9 @@ async function startServer(
     // ==================== DRAFT ORDER TOOLS ====================
 
     // Merged draft-orders tool (replaces get-draft-orders and get-draft-order-by-id)
-    server.tool(
+    server.registerTool(
       "draft-orders",
-      {
+      { inputSchema: z.object({
         id: z
           .string()
           .optional()
@@ -1741,7 +1740,7 @@ async function startServer(
           .string()
           .optional()
           .describe("Pagination cursor for fetching next page"),
-      },
+      }) },
       async (args) => {
         const result = await draftOrders.execute(args);
         return {
@@ -1751,9 +1750,9 @@ async function startServer(
     );
 
     // Create draft order
-    server.tool(
+    server.registerTool(
       "create-draft-order",
-      {
+      { inputSchema: z.object({
         lineItems: z
           .array(
             z.object({
@@ -1835,7 +1834,7 @@ async function startServer(
         note: z.string().optional(),
         tags: z.array(z.string()).optional(),
         taxExempt: z.boolean().optional(),
-      },
+      }) },
       async (args) => {
         const result = await createDraftOrder.execute(args);
         return {
@@ -1845,9 +1844,9 @@ async function startServer(
     );
 
     // Update draft order
-    server.tool(
+    server.registerTool(
       "update-draft-order",
-      {
+      { inputSchema: z.object({
         id: z.string().min(1).describe("Draft order ID to update"),
         lineItems: z
           .array(
@@ -1916,7 +1915,7 @@ async function startServer(
         note: z.string().optional(),
         tags: z.array(z.string()).optional(),
         taxExempt: z.boolean().optional(),
-      },
+      }) },
       async (args) => {
         const result = await updateDraftOrder.execute(args);
         return {
@@ -1926,9 +1925,9 @@ async function startServer(
     );
 
     // Complete draft order
-    server.tool(
+    server.registerTool(
       "complete-draft-order",
-      {
+      { inputSchema: z.object({
         id: z.string().min(1).describe("Draft order ID to complete"),
         paymentPending: z
           .boolean()
@@ -1936,7 +1935,7 @@ async function startServer(
           .describe(
             "If true, marks payment as pending. If false, marks as paid.",
           ),
-      },
+      }) },
       async (args) => {
         const result = await completeDraftOrder.execute(args);
         return {
@@ -1948,9 +1947,9 @@ async function startServer(
     // ==================== URL REDIRECT TOOLS ====================
 
     // Get redirects
-    server.tool(
+    server.registerTool(
       "get-redirects",
-      {
+      { inputSchema: z.object({
         path: z
           .string()
           .optional()
@@ -1963,7 +1962,7 @@ async function startServer(
           .string()
           .optional()
           .describe("Pagination cursor for fetching next page"),
-      },
+      }) },
       async (args) => {
         const result = await getRedirects.execute(args);
         return {
@@ -1973,9 +1972,9 @@ async function startServer(
     );
 
     // Create redirect
-    server.tool(
+    server.registerTool(
       "create-redirect",
-      {
+      { inputSchema: z.object({
         path: z
           .string()
           .min(1)
@@ -1988,7 +1987,7 @@ async function startServer(
           .describe(
             "Target URL to redirect to (e.g., /products/new-product or full URL)",
           ),
-      },
+      }) },
       async (args) => {
         const result = await createRedirect.execute(args);
         return {
@@ -1998,14 +1997,14 @@ async function startServer(
     );
 
     // Delete redirect
-    server.tool(
+    server.registerTool(
       "delete-redirect",
-      {
+      { inputSchema: z.object({
         redirectId: z
           .string()
           .min(1)
           .describe("Redirect ID to delete (can be numeric or full GID)"),
-      },
+      }) },
       async (args) => {
         const result = await deleteRedirect.execute(args);
         return {
@@ -2017,7 +2016,7 @@ async function startServer(
     // ==================== ANALYTICS TOOLS ====================
 
     // Get store counts
-    server.tool("get-store-counts", {}, async (args) => {
+    server.registerTool("get-store-counts", { inputSchema: z.object({}) }, async (args) => {
       const result = await getStoreCounts.execute(args);
       return {
         content: [{ type: "text", text: JSON.stringify(result) }],
@@ -2025,11 +2024,11 @@ async function startServer(
     });
 
     // Count products by tag
-    server.tool(
+    server.registerTool(
       "count-products-by-tag",
-      {
+      { inputSchema: z.object({
         tag: z.string().describe("Tag name to count (e.g. 'wiki-researched')"),
-      },
+      }) },
       async (args) => {
         const result = await countProductsByTag.execute(args);
         return {
@@ -2039,9 +2038,9 @@ async function startServer(
     );
 
     // Get product issues (audit tool)
-    server.tool(
+    server.registerTool(
       "get-product-issues",
-      {
+      { inputSchema: z.object({
         issues: z
           .array(
             z.enum([
@@ -2061,7 +2060,7 @@ async function startServer(
           .number()
           .default(10)
           .describe("Number of example products to return per issue"),
-      },
+      }) },
       async (args) => {
         const result = await getProductIssues.execute(args);
         return {
@@ -2073,9 +2072,9 @@ async function startServer(
     // ==================== BULK OPERATIONS TOOLS ====================
 
     // Start bulk export
-    server.tool(
+    server.registerTool(
       "start-bulk-export",
-      {
+      { inputSchema: z.object({
         type: z
           .enum(["products", "orders", "customers", "inventory", "custom"])
           .describe("Type of export to run"),
@@ -2099,7 +2098,7 @@ async function startServer(
           .boolean()
           .default(false)
           .describe("Include metafields in export"),
-      },
+      }) },
       async (args) => {
         const result = await startBulkExport.execute(args);
         return {
@@ -2109,16 +2108,16 @@ async function startServer(
     );
 
     // Get bulk operation status
-    server.tool(
+    server.registerTool(
       "get-bulk-operation-status",
-      {
+      { inputSchema: z.object({
         operationId: z
           .string()
           .optional()
           .describe(
             "Specific operation ID to check. If omitted, checks the current/most recent operation.",
           ),
-      },
+      }) },
       async (args) => {
         const result = await getBulkOperationStatus.execute(args);
         return {
@@ -2128,9 +2127,9 @@ async function startServer(
     );
 
     // Get bulk operation results
-    server.tool(
+    server.registerTool(
       "get-bulk-operation-results",
-      {
+      { inputSchema: z.object({
         operationId: z
           .string()
           .optional()
@@ -2149,7 +2148,7 @@ async function startServer(
           .describe(
             "Number of objects to return for 'sample' format (default 10)",
           ),
-      },
+      }) },
       async (args) => {
         const result = await getBulkOperationResults.execute(args);
         return {
@@ -2159,9 +2158,9 @@ async function startServer(
     );
 
     // Status/diagnostic tool
-    server.tool(
+    server.registerTool(
       "get-status",
-      {},
+      { inputSchema: z.object({}) },
       async () => {
         const result = await getStatus.execute();
         return {
@@ -2171,9 +2170,9 @@ async function startServer(
     );
 
     // Taxonomy search tool
-    server.tool(
+    server.registerTool(
       "get-files",
-      {
+      { inputSchema: z.object({
         query: z.string().optional().describe("Shopify file search query"),
         limit: z.number().default(50).describe("Maximum files to return"),
         cursor: z.string().optional().describe("Pagination cursor"),
@@ -2189,7 +2188,7 @@ async function startServer(
           .default("UPDATED_AT")
           .describe("Sort key for file results"),
         reverse: z.boolean().default(true).describe("Reverse sort order"),
-      },
+      }) },
       async (args) => {
         const result = await getFiles.execute(args);
         return {
@@ -2198,9 +2197,9 @@ async function startServer(
       },
     );
 
-    server.tool(
+    server.registerTool(
       "attach-file-to-product",
-      {
+      { inputSchema: z.object({
         fileId: z.string().min(1).describe("Shopify file GID"),
         productId: z
           .string()
@@ -2214,7 +2213,7 @@ async function startServer(
           .number()
           .default(30)
           .describe("Maximum time to wait for READY status"),
-      },
+      }) },
       async (args) => {
         const result = await attachFileToProduct.execute(args);
         return {
@@ -2223,15 +2222,15 @@ async function startServer(
       },
     );
 
-    server.tool(
+    server.registerTool(
       "detach-file-from-product",
-      {
+      { inputSchema: z.object({
         fileId: z.string().min(1).describe("Shopify file GID"),
         productId: z
           .string()
           .min(1)
           .describe("Product ID (numeric or full GID)"),
-      },
+      }) },
       async (args) => {
         const result = await detachFileFromProduct.execute(args);
         return {
@@ -2240,14 +2239,14 @@ async function startServer(
       },
     );
 
-    server.tool(
+    server.registerTool(
       "reorder-draft-product-media",
-      {
+      { inputSchema: z.object({
         productId: z.string().min(1).describe("Product ID (numeric or full GID)"),
         mediaIds: z.array(z.string().min(1)).describe("Complete attached MediaImage IDs in desired order"),
         pollIntervalMs: z.number().int().min(0).max(60_000).default(1_000),
         timeoutSeconds: z.number().positive().max(300).default(60),
-      },
+      }) },
       async (args) => {
         const result = await reorderDraftProductMedia.execute(args);
         return { content: [{ type: "text", text: JSON.stringify(result) }] };
@@ -2255,16 +2254,16 @@ async function startServer(
     );
 
     if (REMOTE_MODE) {
-      server.tool(
+      server.registerTool(
         "create-file-upload-session",
-        {
+        { inputSchema: z.object({
           kind: z.enum(["AUTO", "IMAGE", "FILE"]).default("AUTO"),
           altText: z.string().optional(),
           duplicateResolutionMode: z
             .enum(["APPEND_UUID", "RAISE_ERROR", "REPLACE"])
             .default("APPEND_UUID"),
           expiresInMinutes: z.number().min(1).max(60).default(15),
-        },
+        }) },
         async (args) => {
           const result = await createFileUploadSession.execute(args);
           return {
@@ -2273,11 +2272,11 @@ async function startServer(
         },
       );
 
-      server.tool(
+      server.registerTool(
         "get-file-upload-session",
-        {
+        { inputSchema: z.object({
           sessionId: z.string().min(1),
-        },
+        }) },
         async (args) => {
           const result = await getFileUploadSession.execute(args);
           return {
@@ -2288,9 +2287,9 @@ async function startServer(
     }
 
     if (!REMOTE_MODE) {
-      server.tool(
+      server.registerTool(
         "upload-local-file",
-        {
+        { inputSchema: z.object({
           filePath: z
             .string()
             .min(1)
@@ -2313,7 +2312,7 @@ async function startServer(
           duplicateResolutionMode: z
             .enum(["APPEND_UUID", "RAISE_ERROR", "REPLACE"])
             .default("APPEND_UUID"),
-        },
+        }) },
         async (args) => {
           const result = await uploadLocalFile.execute(args);
           return {
@@ -2323,9 +2322,9 @@ async function startServer(
       );
     }
 
-    server.tool(
+    server.registerTool(
       "search-taxonomy",
-      {
+      { inputSchema: z.object({
         search: z.string().optional().describe("Search term to find categories"),
         childrenOf: z.string().optional().describe("Category GID to get children of"),
         siblingsOf: z.string().optional().describe("Category GID to get siblings of"),
@@ -2337,7 +2336,7 @@ async function startServer(
           .describe(
             "Also return each category's standard attributes (e.g., Color, Material) and, for choice-list attributes, their allowed values",
           ),
-      },
+      }) },
       async (args) => {
         const result = await searchTaxonomy.execute(args);
         return {
@@ -2347,9 +2346,9 @@ async function startServer(
     );
 
     // Find products with / without a specific metafield set
-    server.tool(
+    server.registerTool(
       "find-products-by-metafield",
-      {
+      { inputSchema: z.object({
         namespace: z
           .string()
           .min(1)
@@ -2377,7 +2376,7 @@ async function startServer(
           .describe(
             "Pagination cursor from a previous call to continue scanning",
           ),
-      },
+      }) },
       async (args) => {
         const result = await findProductsByMetafield.execute(args);
         return {
@@ -2391,7 +2390,7 @@ async function startServer(
 
   // Start the server based on mode
   if (REMOTE_MODE) {
-    // Remote mode: Express + SSE
+    // Remote mode: modern Streamable HTTP plus the existing SSE endpoints
     const app = express();
     const uploadTmpDir = join(tmpdir(), "shopify-mcp-uploads");
     mkdirSync(uploadTmpDir, { recursive: true });
@@ -2408,11 +2407,38 @@ async function startServer(
     }, 60_000);
     cleanupInterval.unref();
 
+    // Browser origins are explicit; native clients without Origin remain compatible.
+    const allowedOrigins = new Set([
+      new URL(publicAppUrl).origin,
+      `http://localhost:${PORT}`,
+      `http://127.0.0.1:${PORT}`,
+      ...(process.env.MCP_ALLOWED_ORIGINS || "")
+        .split(",")
+        .map((origin) => origin.trim())
+        .filter(Boolean),
+    ]);
+    app.use(["/mcp", "/messages"], (req, res, next) => {
+      const origin = req.headers.origin;
+      if (origin && !allowedOrigins.has(origin)) {
+        res.status(403).json({ error: "Forbidden: Origin is not allowed" });
+        return;
+      }
+      next();
+    });
+
     // CORS middleware
     app.use((req, res, next) => {
       res.setHeader("Access-Control-Allow-Origin", "*");
-      res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-      res.setHeader("Access-Control-Allow-Headers", "*");
+      res.setHeader("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS");
+      // Authorization is not covered by a CORS wildcard. Echo the requested
+      // headers so browsers can also send future Mcp-Param-* headers.
+      res.setHeader(
+        "Access-Control-Allow-Headers",
+        req.headers["access-control-request-headers"] ||
+          "Authorization, Content-Type, MCP-Protocol-Version, Mcp-Method, Mcp-Name, Mcp-Session-Id",
+      );
+      res.vary("Access-Control-Request-Headers");
+      res.setHeader("Access-Control-Expose-Headers", "MCP-Protocol-Version, Mcp-Session-Id");
       if (req.method === "OPTIONS") return res.sendStatus(200);
       next();
     });
@@ -2475,7 +2501,10 @@ async function startServer(
 
     // API key validation middleware
     const validateApiKey = (req: Request, res: Response, next: () => void) => {
-      const apiKey = req.query.apiKey as string;
+      const authorization = req.headers.authorization;
+      const apiKey = authorization?.startsWith("Bearer ")
+        ? authorization.slice(7)
+        : req.query.apiKey;
       const expectedKey = process.env.MCP_API_KEY;
 
       if (!expectedKey) {
@@ -2794,9 +2823,28 @@ async function startServer(
       });
     });
 
+    // The factory gives modern requests and legacy stateless HTTP requests
+    // identical tools and access policy. Keep GET /mcp for existing SSE clients.
+    const httpHandler = createMcpHandler(createMcpServer, {
+      onerror: (error) => console.error("MCP HTTP error:", error),
+    });
+    const handleHttp = toNodeHandler(httpHandler, {
+      onerror: (error) => console.error("MCP HTTP adapter error:", error),
+    });
+    app.post("/mcp", validateApiKey, express.json(), (req, res) =>
+      handleHttp(req, res, req.body),
+    );
+    app.delete("/mcp", validateApiKey, (req, res) => handleHttp(req, res));
+
     // MCP endpoint - client connects here for server-sent events
     // Each connection gets its own McpServer instance (MCP servers are stateful per-connection)
     app.get("/mcp", validateApiKey, async (req: Request, res: Response) => {
+      // Streamable HTTP has no standalone GET stream here. Headerless GET is
+      // reserved for the original SSE URL, including old EventSource clients.
+      if (req.headers["mcp-protocol-version"] || req.headers["mcp-session-id"]) {
+        await handleHttp(req, res);
+        return;
+      }
       const apiKey = req.query.apiKey as string | undefined;
 
       try {
@@ -2814,6 +2862,7 @@ async function startServer(
 
         res.on("close", () => {
           sessions.delete(transport.sessionId);
+          void server.close().catch((error) => console.error("SSE cleanup error:", error));
           console.error(`SSE connection closed: ${transport.sessionId}`);
         });
 
@@ -2826,8 +2875,8 @@ async function startServer(
     // Messages endpoint - client sends messages here
     app.post(
       "/messages",
-      express.json(),
       validateApiKey,
+      express.json(),
       async (req: Request, res: Response) => {
         console.error(`POST /messages received`);
         const sessionId = req.query.sessionId as string | undefined;
@@ -2844,18 +2893,30 @@ async function startServer(
       },
     );
 
-    app.listen(PORT, () => {
+    const httpServer = app.listen(PORT, () => {
       console.error(`Shopify MCP Server running in REMOTE mode`);
-      console.error(`  Health: http://localhost:${PORT}/health`);
-      console.error(`  MCP:    http://localhost:${PORT}/mcp`);
+      const address = httpServer.address();
+      const listeningPort = typeof address === "object" && address ? address.port : PORT;
+      console.error(`  Health: http://localhost:${listeningPort}/health`);
+      console.error(`  MCP:    http://localhost:${listeningPort}/mcp`);
       console.error(`  Public: ${publicAppUrl}`);
       console.error(`  Store:  ${domain}`);
     });
+    const shutdown = () => {
+      httpServer.close();
+      clearInterval(cleanupInterval);
+      void Promise.allSettled([
+        httpHandler.close(),
+        ...Array.from(sessions.values(), ({ server }) => server.close()),
+      ]).then(() => httpServer.closeAllConnections());
+    };
+    process.once("SIGTERM", shutdown);
+    process.once("SIGINT", shutdown);
   } else {
-    // Local mode: stdio transport - create single server instance
-    const server = createMcpServer();
-    const transport = new StdioServerTransport();
-    await server.connect(transport);
+    // The first message selects the protocol era for this stdio connection.
+    serveStdio(createMcpServer, {
+      onerror: (error) => console.error("MCP stdio error:", error),
+    });
   }
 }
 

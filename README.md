@@ -29,7 +29,7 @@ A Model Context Protocol (MCP) server that connects agents to the Shopify Admin 
 
 ## Prerequisites
 
-- Node.js 18+
+- Node.js 20+
 - A Shopify custom app (OAuth or Admin API token)
 
 ## Local setup (this repo)
@@ -228,11 +228,25 @@ MCP_API_KEY=choose-a-long-random-string  # required to authenticate remote clien
 
 **3. Connect:**
 - Health check: `GET /health`
-- MCP endpoint (SSE): `GET /mcp?apiKey=<MCP_API_KEY>`
-- Messages: `POST /messages?apiKey=<MCP_API_KEY>`
+- Streamable HTTP: `/mcp`, using POST for requests, including MCP 2026-07-28.
+- Existing SSE clients: `GET /mcp?apiKey=<MCP_API_KEY>`.
+- Existing SSE messages: `POST /messages?apiKey=<MCP_API_KEY>`.
 
-Auth uses the `apiKey` **query parameter**; requests without a matching
-`MCP_API_KEY` receive `401`.
+Send `Authorization: Bearer <MCP_API_KEY>` with Streamable HTTP requests.
+The existing `apiKey` query parameter also works on both transports. When
+`MCP_API_KEY` is configured, missing or invalid credentials receive `401` on
+all MCP routes. An explicit Bearer header takes precedence over the query key.
+The no-key development mode and unauthenticated health endpoint remain available.
+Use HTTPS and configure a key for a public deployment. This shared-key scheme
+is not an MCP OAuth authorization server.
+
+Native clients without an `Origin` header work unchanged. Browser requests to
+MCP routes must use the configured public app origin, the local server origin,
+or an exact origin listed in `MCP_ALLOWED_ORIGINS`, comma-separated, such as
+`https://client.example,https://another-client.example`. Other origins receive
+`403`, including preflight requests. Public app URL resolution continues to use
+`PUBLIC_BASE_URL`, `APP_URL`, or the Railway public URL/domain variables.
+The upload pages keep their existing URLs and short-lived upload-session checks.
 
 **Test the container locally before deploying:**
 ```bash
@@ -257,6 +271,37 @@ MYSHOPIFY_DOMAIN=your-store.myshopify.com
 # Hide every mutating or unreviewed tool (also available as `--read-only`):
 # SHOPIFY_MCP_READ_ONLY=true
 ```
+
+## Protocol compatibility and upgrade notes
+
+The server uses TypeScript SDK v2 and Zod 4. Local stdio selects the protocol
+from the opening message. Remote POST `/mcp` supports both MCP 2026-07-28
+and older initialization-based Streamable HTTP clients. Modern requests use
+`server/discover` and per-request metadata rather than an initialization session.
+
+Existing stdio commands, Shopify credentials, token renewal, OAuth setup,
+read-only flags, tool names, and legacy SSE connection URLs remain available.
+The same tool registrations and fail-closed allowlist serve every transport.
+
+Compatibility limits:
+
+- Node 18 is no longer supported by SDK v2. Upgrade Node to 20+ before updating
+  this server, or retain the previous release. The Docker image already uses Node 20.
+- Legacy SSE uses the SDK's frozen `server-legacy` compatibility package.
+  New integrations should use Streamable HTTP; the SSE bridge receives no new features.
+- Legacy Streamable HTTP on POST `/mcp` is stateless, with no session ID or replay.
+  GET `/mcp` without protocol/session headers remains the original SSE endpoint.
+  Streamable HTTP GET and DELETE session operations are unsupported. A reconnect
+  to legacy SSE creates a new connection, as before.
+- Browser clients from other origins must configure `MCP_ALLOWED_ORIGINS`.
+  API-key authentication remains separate from Shopify OAuth and does not provide
+  automatic MCP OAuth discovery or token issuance.
+
+Run `npm test -- --runInBand` for the application suite and
+`npm run test:connections` for built-server connection and security tests.
+Connection tests use SDK v1.17.1 and v2.0.0, explicitly pin modern clients to
+2026-07-28, compare tool catalogs, and mock Shopify calls without store access.
+See [the research notes](docs/mcp-sdk-v2-research.md) for official sources and migration details.
 
 ## Tool catalog
 
