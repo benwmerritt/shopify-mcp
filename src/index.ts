@@ -24,7 +24,7 @@ import { getCustomers } from "./tools/getCustomers.js";
 import { updateCustomer } from "./tools/updateCustomer.js";
 import { updateOrder } from "./tools/updateOrder.js";
 import { createProduct } from "./tools/createProduct.js";
-import { updateProduct } from "./tools/updateProduct.js";
+import { updateProduct, UpdateProductInputSchema } from "./tools/updateProduct.js";
 import { createProductOption } from "./tools/createProductOption.js";
 
 // Import new data cleanup tools
@@ -538,66 +538,10 @@ async function startServer(
     // Note: weight must be set separately via inventory item update
     server.tool(
       "update-product",
-      {
-        // REQUIRED - product ID
-        id: z.string().min(1),
-
-        // Basic product fields (all optional)
-        title: z.string().optional(),
-        handle: z.string().min(1).optional(),
-        redirectNewHandle: z.boolean().optional().describe(
-          "When changing handle, create Shopify's native redirect from the previous handle",
-        ),
-        descriptionHtml: z.string().optional(),
-        seo: z.object({
-          title: z.string().optional(),
-          description: z.string().optional(),
-        }).optional(),
-        vendor: z.string().optional(),
-        productType: z.string().optional(),
-        category: z
-          .string()
-          .optional()
-          .describe(
-            "Shopify Standard Product Taxonomy GID. Uses `vp-*` for Vehicles & Parts (e.g. 'gid://shopify/TaxonomyCategory/vp-2-2-3-2' = Non-Electric Motorcycles & Scooters). Use `search-taxonomy` to find IDs — don't guess. The tool VERIFIES the category stuck by comparing returned product.category.id to what you sent; throws a clear error if it didn't, instead of returning a silently-null category.",
-          ),
-        tags: z.array(z.string()).optional(),
-        status: z.enum(["ACTIVE", "DRAFT", "ARCHIVED"]).optional(),
-
-        // Simple variant fields (auto-updates first variant)
-        price: z.string().optional(),
-        compareAtPrice: z.string().optional(),
-        sku: z.string().optional(),
-        barcode: z.string().optional(),
-
-        // For updating specific variants
-        variants: z
-          .array(
-            z.object({
-              id: z.string().optional(),
-              price: z.string().optional(),
-              compareAtPrice: z.string().optional(),
-              sku: z.string().optional(),
-              barcode: z.string().optional(),
-              options: z.array(z.string()).optional(),
-              optionValues: z.array(z.object({
-                optionName: z.string().min(1),
-                name: z.string().min(1),
-              })).optional(),
-            }),
-          )
-          .optional(),
-
-        // Images
-        images: z
-          .array(
-            z.object({
-              src: z.string(),
-              altText: z.string().optional(),
-            }),
-          )
-          .optional(),
-      },
+      // Reuse the tool's own Zod shape so the advertised schema and the
+      // validation schema cannot drift (params missing here are stripped
+      // client-side before they reach the tool).
+      UpdateProductInputSchema.shape,
       async (args) => {
         const result = await updateProduct.execute(args);
         return {
