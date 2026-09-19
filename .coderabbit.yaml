@@ -1,0 +1,8 @@
+# yaml-language-server: $schema=https://www.coderabbit.ai/integrations/schema.v2.json
+reviews:
+  path_instructions:
+    - path: "{package.json,package-lock.json}"
+      instructions: >-
+        Before reporting a missing or stale lockfile, inspect the committed
+        package-lock.json and the npm ci results for the reviewed commit.
+        Cite the dependency mismatch or installation failure supporting the finding.
