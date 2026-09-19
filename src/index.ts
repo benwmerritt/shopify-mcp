@@ -2407,7 +2407,30 @@ async function startServer(
     }, 60_000);
     cleanupInterval.unref();
 
-    // Browser origins are explicit; native clients without Origin remain compatible.
+    // Validate the actual Host header even when native clients omit Origin.
+    // Additional proxy/domain hostnames must be configured explicitly.
+    const allowedHosts = new Set([
+      new URL(publicAppUrl).hostname.toLowerCase(),
+      "localhost",
+      "127.0.0.1",
+      "[::1]",
+      ...(process.env.MCP_ALLOWED_HOSTS || "")
+        .split(",")
+        .map((host) => host.trim().toLowerCase())
+        .filter(Boolean),
+    ]);
+    app.use(["/mcp", "/messages"], (req, res, next) => {
+      // Match a hostname and optional port without URL parsing that could
+      // normalize userinfo, paths, escaped characters, or alternate IP forms.
+      const host = req.headers.host?.match(/^(\[[0-9a-f:]+\]|[a-z0-9.-]+)(?::[0-9]+)?$/i)?.[1];
+      if (!host || !allowedHosts.has(host.toLowerCase())) {
+        res.status(403).json({ error: "Forbidden: Host is not allowed" });
+        return;
+      }
+      next();
+    });
+
+    // Browser origins are checked separately from the destination hostname.
     const allowedOrigins = new Set([
       new URL(publicAppUrl).origin,
       `http://localhost:${PORT}`,
@@ -2893,10 +2916,17 @@ async function startServer(
       },
     );
 
-    const httpServer = app.listen(PORT, () => {
+    // Unauthenticated development servers must not listen on external interfaces.
+    const httpServer = app.listen({
+      port: PORT,
+      host: process.env.MCP_API_KEY ? undefined : "127.0.0.1",
+    }, () => {
       console.error(`Shopify MCP Server running in REMOTE mode`);
       const address = httpServer.address();
       const listeningPort = typeof address === "object" && address ? address.port : PORT;
+      if (typeof address === "object" && address) {
+        console.error(`  Listening address: ${address.address}`);
+      }
       console.error(`  Health: http://localhost:${listeningPort}/health`);
       console.error(`  MCP:    http://localhost:${listeningPort}/mcp`);
       console.error(`  Public: ${publicAppUrl}`);

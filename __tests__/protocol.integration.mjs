@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
+import { request } from 'node:http';
 import { test } from 'node:test';
 import { Client as LegacyClient } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport as LegacyStdio } from '@modelcontextprotocol/sdk/client/stdio.js';
@@ -57,7 +58,8 @@ for (const readOnly of [false, true]) {
 
 async function startRemote(readOnly, key = 'test-key') {
   const child = spawn(process.execPath, [...args, '--remote', ...(readOnly ? ['--read-only'] : [])], {
-    env: { ...env, PORT: '0', MCP_API_KEY: key, MCP_ALLOWED_ORIGINS: 'https://client.example' },
+    env: { ...env, PORT: '0', MCP_API_KEY: key, MCP_ALLOWED_ORIGINS: 'https://client.example',
+      PUBLIC_BASE_URL: 'https://public.example', MCP_ALLOWED_HOSTS: 'custom.example' },
     stdio: ['ignore', 'ignore', 'pipe'],
   });
   let logs = '';
@@ -70,7 +72,7 @@ async function startRemote(readOnly, key = 'test-key') {
       if (match) { clearTimeout(timeout); resolve(match[1]); }
     });
   }).catch(error => { child.kill('SIGKILL'); throw error; });
-  return { url, async close() {
+  return { url, listeningAddress: logs.match(/Listening address: (.+)/)?.[1], async close() {
     const exited = once(child, 'exit'); child.kill('SIGTERM');
     const timer = setTimeout(() => child.kill('SIGKILL'), 3000);
     try { const [code, signal] = await exited; assert.equal(signal, null); assert.equal(code, 0); }
@@ -106,10 +108,31 @@ for (const readOnly of [false, true]) {
   });
 }
 
-test('HTTP authentication, origin validation, protocol errors and legacy session isolation', { timeout: 20000 }, async () => {
+test('HTTP authentication, host/origin validation, protocol errors and unknown legacy sessions', { timeout: 20000 }, async () => {
   const server = await startRemote(true);
   try {
     assert.equal((await fetch(`${server.url}/health`)).status, 200);
+    // Use node:http to send the actual Host header consistently across Node versions.
+    const hostStatus = (path, method, host, extraHeaders = {}) => new Promise((resolve, reject) => {
+      const req = request(`${server.url}${path}`, {
+        method, setHost: false, headers: { Host: host, ...extraHeaders },
+      }, response => { response.resume(); response.on('end', () => resolve(response.statusCode)); });
+      req.on('error', reject);
+      req.end();
+    });
+    for (const path of ['/mcp', '/messages']) {
+      for (const host of ['evil.example', 'localhost.attacker.example', 'localhost@evil.example', 'localhost/evil', '']) {
+        // No Origin or credentials: Host validation must run before authentication.
+        assert.equal(await hostStatus(path, 'POST', host), 403, `Rejected Host: ${host}`);
+        assert.equal(await hostStatus(path, 'OPTIONS', host), 403);
+      }
+      assert.equal(await hostStatus(path, 'OPTIONS', 'evil.example', { 'X-Forwarded-Host': 'public.example' }), 403);
+      for (const host of ['public.example', 'custom.example:8080', 'LOCALHOST', '127.0.0.1', '[::1]:3000']) {
+        assert.equal(await hostStatus(path, 'POST', host), 401);
+        assert.equal(await hostStatus(path, 'OPTIONS', host, { Origin: 'https://client.example' }), 200);
+        assert.equal(await hostStatus(path, 'OPTIONS', host, { Origin: 'https://evil.example' }), 403);
+      }
+    }
     for (const [path, method] of [['/mcp', 'GET'], ['/mcp', 'POST'], ['/mcp', 'DELETE'], ['/messages', 'POST']]) {
       for (const key of ['', '?apiKey=wrong']) {
         assert.equal((await fetch(`${server.url}${path}${key}`, { method })).status, 401);
@@ -174,10 +197,11 @@ test('HTTP authentication, origin validation, protocol errors and legacy session
   } finally { await server.close(); }
 });
 
-test('existing no-key development setup remains usable', { timeout: 15000 }, async () => {
+test('no-key development setup remains usable on loopback', { timeout: 15000 }, async () => {
   const server = await startRemote(false, '');
   const client = new Client(info, modernOptions);
   try {
+    assert.equal(server.listeningAddress, '127.0.0.1');
     await client.connect(new StreamableHTTPClientTransport(new URL(`${server.url}/mcp`)));
     await verifyTools(client, false, true);
   } finally { await client.close(); await server.close(); }

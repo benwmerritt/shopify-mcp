@@ -235,12 +235,22 @@ MCP_API_KEY=choose-a-long-random-string  # required to authenticate remote clien
 Send `Authorization: Bearer <MCP_API_KEY>` with Streamable HTTP requests.
 The existing `apiKey` query parameter also works on both transports. When
 `MCP_API_KEY` is configured, missing or invalid credentials receive `401` on
-all MCP routes. An explicit Bearer header takes precedence over the query key.
-The no-key development mode and unauthenticated health endpoint remain available.
+all MCP routes except allowed `OPTIONS` preflights, which do not require credentials.
+An explicit Bearer header takes precedence over the query key.
+Without `MCP_API_KEY`, development mode binds only to `127.0.0.1`.
+External deployments, including containers that publish a port, must configure a
+key to listen on all interfaces. The health endpoint remains unauthenticated.
 Use HTTPS and configure a key for a public deployment. This shared-key scheme
 is not an MCP OAuth authorization server.
 
-Native clients without an `Origin` header work unchanged. Browser requests to
+MCP routes validate the actual `Host` header before Origin and authentication,
+including requests without an `Origin` header and `OPTIONS` preflights. Allowed
+hostnames are the configured public app hostname, `localhost`, `127.0.0.1`, and
+`[::1]`, with an optional port. Add custom proxy or domain hostnames through
+`MCP_ALLOWED_HOSTS`, comma-separated, such as `mcp.example.com,internal-proxy.example.com`.
+Use hostnames without schemes or ports; matches are exact and case-insensitive.
+`X-Forwarded-Host` is not trusted. Other or missing Host headers receive `403`.
+Native clients without an `Origin` header work when their Host is allowed. Browser requests to
 MCP routes must use the configured public app origin, the local server origin,
 or an exact origin listed in `MCP_ALLOWED_ORIGINS`, comma-separated, such as
 `https://client.example,https://another-client.example`. Other origins receive
