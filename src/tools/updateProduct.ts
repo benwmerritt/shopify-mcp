@@ -176,7 +176,7 @@ const updateProduct = {
 
   execute: async (
     input: UpdateProductInput,
-  ): Promise<{ product: Record<string, any>; redirectNewHandle?: boolean }> => {
+  ): Promise<{ product: Record<string, any>; redirectNewHandle?: boolean; warnings?: string[] }> => {
     try {
       const productId = normalizeProductId(input.id);
 
@@ -421,19 +421,39 @@ const updateProduct = {
         images: { edges: Array<{ node: Record<string, unknown> }> };
       };
 
+      // Set when the cost read back had to be retried without unitCost; the
+      // write already succeeded at that point, so it must not look like a
+      // failure to the caller.
+      let costReadback: string | undefined;
+
       const formatProduct = (product: ProductPayload) => ({
         product: {
           ...product,
-          variants: product.variants.edges.map((e) => formatVariant(e.node, wantsCost)),
+          variants: product.variants.edges.map((e) =>
+            formatVariant(e.node, wantsCost && costReadback === undefined),
+          ),
           images: product.images.edges.map((e) => e.node),
         },
+        ...(costReadback ? { warnings: [costReadback] } : {}),
       });
 
       const readProduct = async (failure: string): Promise<ProductPayload> => {
-        const readData = (await shopifyClient.request(
-          gql`query getUpdatedProduct($id: ID!) { product(id: $id) { ${productSelection(wantsCost)} } }`,
-          { id: productId },
-        )) as { product: ProductPayload | null };
+        const query = (includeCost: boolean) =>
+          gql`query getUpdatedProduct($id: ID!) { product(id: $id) { ${productSelection(includeCost)} } }`;
+        let readData: { product: ProductPayload | null };
+        try {
+          readData = (await shopifyClient.request(query(wantsCost), { id: productId })) as typeof readData;
+        } catch (error) {
+          if (!wantsCost) throw error;
+          // inventoryItem.unitCost needs read_inventory, which a token allowed
+          // to write cost may not have. Every mutation has already committed,
+          // so fall back to a cost-less read and say so rather than reporting
+          // a failed update.
+          costReadback = `cost was written but could not be read back (${
+            error instanceof Error ? error.message : String(error)
+          }); the token may lack the read_inventory scope`;
+          readData = (await shopifyClient.request(query(false), { id: productId })) as typeof readData;
+        }
         if (!readData.product) throw new Error(failure);
         return readData.product;
       };

@@ -797,3 +797,48 @@ describe("update-product pre-mutation money validation", () => {
     expect(String(request.mock.calls[3][0])).toContain("unitCost");
   });
 });
+
+describe("update-product cost read back without read_inventory", () => {
+  it("keeps a successful cost write visible when unitCost cannot be read", async () => {
+    const request = jest
+      .fn()
+      .mockResolvedValueOnce({
+        productVariantsBulkUpdate: { productVariants: [], userErrors: [] },
+      })
+      .mockRejectedValueOnce(new Error("Access denied for unitCost field. Required access: `read_inventory`"))
+      .mockResolvedValueOnce({
+        product: {
+          ...PRODUCT_FIELDS,
+          variants: { edges: [{ node: {
+            id: "gid://shopify/ProductVariant/456", title: "Default Title",
+            price: "10.00", compareAtPrice: null, sku: null, barcode: null,
+          } }] },
+          images: { edges: [] },
+        },
+      });
+
+    updateProduct.initialize({ request } as any);
+    const result = await updateProduct.execute({ id: "123", variants: [{ id: "456", cost: "4.20" }] });
+
+    expect(request).toHaveBeenCalledTimes(3);
+    expect(String(request.mock.calls[1][0])).toContain("unitCost");
+    expect(String(request.mock.calls[2][0])).not.toContain("unitCost");
+    expect(result.product.variants[0]).not.toHaveProperty("cost");
+    expect(result.warnings).toEqual([expect.stringMatching(/cost was written but could not be read back.*read_inventory/)]);
+  });
+
+  it("still fails when a cost-less read back errors", async () => {
+    const request = jest
+      .fn()
+      .mockResolvedValueOnce({
+        productVariantsBulkUpdate: { productVariants: [], userErrors: [] },
+      })
+      .mockRejectedValueOnce(new Error("boom"));
+
+    updateProduct.initialize({ request } as any);
+    await expect(
+      updateProduct.execute({ id: "123", variants: [{ id: "456", price: "1.00" }] }),
+    ).rejects.toThrow(/boom/);
+    expect(request).toHaveBeenCalledTimes(2);
+  });
+});
