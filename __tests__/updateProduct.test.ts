@@ -755,3 +755,46 @@ describe("update-product ordering guards", () => {
     expect(String(request.mock.calls[0][0])).toContain("mutation productSet");
   });
 });
+
+describe("update-product pre-mutation money validation", () => {
+  it("rejects a non-decimal cost before any request", async () => {
+    const request = jest.fn();
+
+    updateProduct.initialize({ request } as any);
+    await expect(
+      updateProduct.execute({ id: "123", title: "New", variants: [{ id: "456", cost: "not-a-number" }] }),
+    ).rejects.toThrow(/variants\[0\]\.cost must be a decimal string/);
+    await expect(
+      updateProduct.execute({ id: "123", price: "$9.99" }),
+    ).rejects.toThrow(/price must be a decimal string/);
+    expect(request).not.toHaveBeenCalled();
+  });
+
+  it("selects unitCost only on the read back, never on productSet", async () => {
+    const request = jest
+      .fn()
+      .mockResolvedValueOnce({
+        product: { variants: { edges: [{ node: { id: "gid://shopify/ProductVariant/456" } }] } },
+      })
+      .mockResolvedValueOnce({
+        productSet: {
+          product: { ...PRODUCT_FIELDS, title: "T", variants: { edges: [] }, images: { edges: [] } },
+          userErrors: [],
+        },
+      })
+      .mockResolvedValueOnce({
+        productVariantsBulkUpdate: { productVariants: [], userErrors: [] },
+      })
+      .mockResolvedValueOnce({
+        product: { ...PRODUCT_FIELDS, title: "T", variants: { edges: [] }, images: { edges: [] } },
+      });
+
+    updateProduct.initialize({ request } as any);
+    await updateProduct.execute({ id: "123", title: "T", cost: "3.00" });
+
+    expect(String(request.mock.calls[1][0])).toContain("mutation productSet");
+    expect(String(request.mock.calls[1][0])).not.toContain("unitCost");
+    expect(String(request.mock.calls[3][0])).toContain("query getUpdatedProduct");
+    expect(String(request.mock.calls[3][0])).toContain("unitCost");
+  });
+});

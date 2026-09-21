@@ -273,6 +273,23 @@ const updateProduct = {
           "Top-level price/sku/compareAtPrice/barcode/cost cannot be combined with new variants - put those fields on a variants[] entry with an id instead",
         );
       }
+      // Shopify's Decimal/Money inputs are strings; check the shape here so a
+      // bad value fails before productSet has committed anything.
+      const moneyFields: Array<[string, string | undefined]> = [
+        ["price", input.price], ["compareAtPrice", input.compareAtPrice], ["cost", input.cost],
+      ];
+      (input.variants ?? []).forEach((v, i) => {
+        moneyFields.push(
+          [`variants[${i}].price`, v.price],
+          [`variants[${i}].compareAtPrice`, v.compareAtPrice],
+          [`variants[${i}].cost`, v.cost],
+        );
+      });
+      for (const [name, value] of moneyFields) {
+        if (value !== undefined && !/^\d+(\.\d+)?$/.test(value)) {
+          throw new Error(`${name} must be a decimal string like "12.50", got "${value}"`);
+        }
+      }
       // The public schema accepts variants[].options (positional values) but
       // nothing has ever mapped it; refuse it rather than silently drop it.
       if ((input.variants ?? []).some((v) => v.options !== undefined)) {
@@ -371,7 +388,10 @@ const updateProduct = {
         firstVariantId = fetchData.product.variants?.edges?.[0]?.node.id ?? null;
       }
 
-      const productSelection = `
+      // unitCost is only selected on the final read back. A cost write always
+      // ends in one, and asking productSet for it would need read_inventory
+      // before the cost is even written.
+      const productSelection = (includeCost: boolean) => `
         id
         title
         handle
@@ -384,7 +404,7 @@ const updateProduct = {
         tags
         ${input.renameOption ? "options { id name }" : ""}
         variants(first: 100) {
-          edges { node { ${variantSelection(wantsCost)} } }
+          edges { node { ${variantSelection(includeCost)} } }
         }
         images(first: 20) {
           edges { node { id url altText } }
@@ -417,7 +437,7 @@ const updateProduct = {
 
       const readProduct = async (failure: string): Promise<ProductPayload> => {
         const readData = (await shopifyClient.request(
-          gql`query getUpdatedProduct($id: ID!) { product(id: $id) { ${productSelection} } }`,
+          gql`query getUpdatedProduct($id: ID!) { product(id: $id) { ${productSelection(wantsCost)} } }`,
           { id: productId },
         )) as { product: ProductPayload | null };
         if (!readData.product) throw new Error(failure);
@@ -481,7 +501,7 @@ const updateProduct = {
         const query = gql`
           mutation productSet($input: ProductSetInput!, $synchronous: Boolean) {
             productSet(input: $input, synchronous: $synchronous) {
-              product { ${productSelection} }
+              product { ${productSelection(false)} }
               userErrors { field message }
             }
           }
@@ -556,13 +576,13 @@ const updateProduct = {
         })) as {
           productVariantsBulkCreate: {
             productVariants: Array<Record<string, unknown>>;
-            userErrors: Array<{ field: string[]; message: string }>;
+            userErrors: Array<{ field: string[] | null; message: string }>;
           };
         };
         if (bulkCreateData.productVariantsBulkCreate.userErrors.length > 0) {
           throw new Error(
             `Failed to create product variants: ${bulkCreateData.productVariantsBulkCreate.userErrors
-              .map((e) => `${e.field.join(".")}: ${e.message}`).join(", ")}`,
+              .map((e) => (e.field?.length ? `${e.field.join(".")}: ${e.message}` : e.message)).join(", ")}`,
           );
         }
         createdVariants = true;
