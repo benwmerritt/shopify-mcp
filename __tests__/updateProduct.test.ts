@@ -538,7 +538,7 @@ describe("update-product renameOption", () => {
 });
 
 describe("update-product combined product-level and variant edits", () => {
-  it("creates variants, then writes product-level edits, then reads back once", async () => {
+  it("writes product-level edits, then creates variants, then reads back once", async () => {
     const createdVariant = {
       id: "gid://shopify/ProductVariant/789", title: "L", price: "5.00",
       compareAtPrice: null, sku: null, barcode: null,
@@ -546,13 +546,13 @@ describe("update-product combined product-level and variant edits", () => {
     const request = jest
       .fn()
       .mockResolvedValueOnce({
-        productVariantsBulkCreate: { productVariants: [createdVariant], userErrors: [] },
-      })
-      .mockResolvedValueOnce({
         productSet: {
           product: { ...PRODUCT_FIELDS, title: "X", variants: { edges: [] }, images: { edges: [] } },
           userErrors: [],
         },
+      })
+      .mockResolvedValueOnce({
+        productVariantsBulkCreate: { productVariants: [createdVariant], userErrors: [] },
       })
       .mockResolvedValueOnce({
         product: {
@@ -569,14 +569,16 @@ describe("update-product combined product-level and variant edits", () => {
     });
 
     expect(request).toHaveBeenCalledTimes(3);
-    expect(String(request.mock.calls[0][0])).toContain("mutation productVariantsBulkCreate");
-    expect(request.mock.calls[0][1]).toEqual({
+    // productSet is idempotent, creation is not: a rejected product-level
+    // edit must fail before any variant exists to be duplicated on retry.
+    expect(String(request.mock.calls[0][0])).toContain("mutation productSet");
+    expect(request.mock.calls[0][1].input).toEqual({
+      id: "gid://shopify/Product/123", title: "X",
+    });
+    expect(String(request.mock.calls[1][0])).toContain("mutation productVariantsBulkCreate");
+    expect(request.mock.calls[1][1]).toEqual({
       productId: "gid://shopify/Product/123",
       variants: [{ optionValues: [{ optionName: "Size", name: "L" }], price: "5.00" }],
-    });
-    expect(String(request.mock.calls[1][0])).toContain("mutation productSet");
-    expect(request.mock.calls[1][1].input).toEqual({
-      id: "gid://shopify/Product/123", title: "X",
     });
     expect(String(request.mock.calls[2][0])).toContain("query getUpdatedProduct");
     expect(result.product.title).toBe("X");
@@ -727,5 +729,29 @@ describe("update-product existing-variant optionValues", () => {
       price: "1.00",
       optionValues: [{ optionName: "Size", name: "XL" }],
     }]);
+  });
+});
+
+describe("update-product ordering guards", () => {
+  it("does not create variants when the product-level write is rejected", async () => {
+    const request = jest.fn().mockResolvedValueOnce({
+      productSet: {
+        product: { ...PRODUCT_FIELDS, category: null, variants: { edges: [] }, images: { edges: [] } },
+        userErrors: [],
+      },
+    });
+
+    updateProduct.initialize({ request } as any);
+    await expect(
+      updateProduct.execute({
+        id: "123",
+        category: "gid://shopify/TaxonomyCategory/bogus",
+        variants: [{ optionValues: [{ optionName: "Size", name: "L" }], price: "5.00" }],
+      }),
+    ).rejects.toThrow(/Category did not stick/);
+
+    // Only productSet ran; productVariantsBulkCreate was never reached.
+    expect(request).toHaveBeenCalledTimes(1);
+    expect(String(request.mock.calls[0][0])).toContain("mutation productSet");
   });
 });

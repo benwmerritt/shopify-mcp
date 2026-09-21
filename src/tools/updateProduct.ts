@@ -475,9 +475,54 @@ const updateProduct = {
         variantsToUpdate.push(v);
       }
 
+      // Product-level fields via productSet (no variants in the payload).
+      let product: ProductPayload | null = null;
+      if (hasProductLevelChanges) {
+        const query = gql`
+          mutation productSet($input: ProductSetInput!, $synchronous: Boolean) {
+            productSet(input: $input, synchronous: $synchronous) {
+              product { ${productSelection} }
+              userErrors { field message }
+            }
+          }
+        `;
+
+        const data = (await shopifyClient.request(query, {
+          input: productInput,
+          synchronous: true,
+        })) as {
+          productSet: {
+            product: ProductPayload | null;
+            userErrors: Array<{ field: string[] | null; message: string }>;
+          };
+        };
+
+        if (data.productSet.userErrors.length > 0) {
+          throw new Error(
+            `Failed to update product: ${data.productSet.userErrors
+              .map((e) => (e.field?.length ? `${e.field.join(".")}: ${e.message}` : e.message))
+              .join(", ")}`
+          );
+        }
+
+        if (!data.productSet.product) {
+          throw new Error("Product update returned no product - check if the ID is valid");
+        }
+
+        product = data.productSet.product;
+
+        // Loud-fail if the caller asked to set the category and Shopify silently
+        // ignored it (invalid taxonomy GID, wrong namespace, etc).
+        if (input.category !== undefined) {
+          verifyCategorySet(product, input.category);
+        }
+      }
+
       // New variants must use the purpose-built bulk-create mutation. The
       // public ProductSetInput schema does not expose variants[].optionValues
-      // for additional variants on API 2026-01.
+      // for additional variants on API 2026-01. This runs after productSet:
+      // productSet is idempotent, creation is not, so a rejected product-level
+      // edit must fail before any variant exists to be duplicated on retry.
       let createdVariants = false;
       if (variantsToCreate.length > 0) {
         const bulkCreateQuery = gql`
@@ -521,49 +566,6 @@ const updateProduct = {
           );
         }
         createdVariants = true;
-      }
-
-      // Product-level fields via productSet (no variants in the payload).
-      let product: ProductPayload | null = null;
-      if (hasProductLevelChanges) {
-        const query = gql`
-          mutation productSet($input: ProductSetInput!, $synchronous: Boolean) {
-            productSet(input: $input, synchronous: $synchronous) {
-              product { ${productSelection} }
-              userErrors { field message }
-            }
-          }
-        `;
-
-        const data = (await shopifyClient.request(query, {
-          input: productInput,
-          synchronous: true,
-        })) as {
-          productSet: {
-            product: ProductPayload | null;
-            userErrors: Array<{ field: string[] | null; message: string }>;
-          };
-        };
-
-        if (data.productSet.userErrors.length > 0) {
-          throw new Error(
-            `Failed to update product: ${data.productSet.userErrors
-              .map((e) => (e.field?.length ? `${e.field.join(".")}: ${e.message}` : e.message))
-              .join(", ")}`
-          );
-        }
-
-        if (!data.productSet.product) {
-          throw new Error("Product update returned no product - check if the ID is valid");
-        }
-
-        product = data.productSet.product;
-
-        // Loud-fail if the caller asked to set the category and Shopify silently
-        // ignored it (invalid taxonomy GID, wrong namespace, etc).
-        if (input.category !== undefined) {
-          verifyCategorySet(product, input.category);
-        }
       }
 
       if (variantsToUpdate.length > 0) {
