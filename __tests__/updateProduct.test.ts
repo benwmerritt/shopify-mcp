@@ -526,14 +526,13 @@ describe("update-product renameOption", () => {
     expect(request).not.toHaveBeenCalled();
   });
 
-  it("rejects the unsupported variants[].options field before any write", async () => {
-    const request = jest.fn();
-
-    updateProduct.initialize({ request } as any);
-    await expect(
-      updateProduct.execute({ id: "123", variants: [{ id: "456", options: ["XL"], price: "1.00" }] }),
-    ).rejects.toThrow(/variants\[\]\.options is not supported/);
-    expect(request).not.toHaveBeenCalled();
+  it("rejects the old positional variants[].options at the schema boundary", () => {
+    const result = UpdateProductInputSchema.safeParse({
+      id: "123",
+      variants: [{ id: "456", options: ["XL"], price: "1.00" }],
+    });
+    expect(result.success).toBe(false);
+    expect(JSON.stringify(result.success ? null : result.error.issues)).toMatch(/options/);
   });
 });
 

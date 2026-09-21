@@ -4,13 +4,14 @@ import { z } from "zod";
 
 // Variant update schema
 // Note: weight/weightUnit are not supported on ProductVariantSetInput - must be set via inventory item
+// strict() so an unknown key (the old positional `options`, say) is rejected
+// at the MCP boundary instead of being stripped and silently ignored.
 const VariantUpdateSchema = z.object({
   id: z.string().optional(),
   price: z.string().optional(),
   compareAtPrice: z.string().optional(),
   sku: z.string().optional(),
   barcode: z.string().optional(),
-  options: z.array(z.string()).optional(),
   optionValues: z.array(z.object({
     optionName: z.string().min(1),
     name: z.string().min(1),
@@ -18,7 +19,7 @@ const VariantUpdateSchema = z.object({
   // Unit cost ("cost per item", shop currency). Lives on the inventory item,
   // not the variant, so it is sent as inventoryItem.cost.
   cost: z.string().optional(),
-});
+}).strict();
 
 // Image schema
 const ImageSchema = z.object({
@@ -289,13 +290,6 @@ const updateProduct = {
         if (value !== undefined && !/^\d+(\.\d+)?$/.test(value)) {
           throw new Error(`${name} must be a decimal string like "12.50", got "${value}"`);
         }
-      }
-      // The public schema accepts variants[].options (positional values) but
-      // nothing has ever mapped it; refuse it rather than silently drop it.
-      if ((input.variants ?? []).some((v) => v.options !== undefined)) {
-        throw new Error(
-          "variants[].options is not supported - use variants[].optionValues ([{optionName, name}]) instead",
-        );
       }
 
       // Rename a product option in place. productOptionUpdate cannot be rolled
