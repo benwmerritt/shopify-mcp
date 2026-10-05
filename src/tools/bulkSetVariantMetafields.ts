@@ -2,21 +2,25 @@ import type { GraphQLClient } from "graphql-request";
 import { gql } from "graphql-request";
 import { z } from "zod";
 
-const MetafieldEntrySchema = z.object({
-  namespace: z.string().min(1).describe("Metafield namespace (e.g. 'custom')"),
-  key: z.string().min(1).describe("Metafield key (e.g. 'sale_type', 'jet_size')"),
-  value: z
-    .string()
-    .describe(
-      "Value as a string. For reference types pass the target GID; for list types pass a JSON array string."
-    ),
-  type: z
-    .string()
-    .optional()
-    .describe(
-      "Metafield type. Omit to inherit the field's definition type (recommended when a definition exists). Common: single_line_text_field, number_decimal, metaobject_reference, list.metaobject_reference."
-    )
-});
+// A factory rather than a shared constant: zod-to-json-schema emits a $ref for
+// every schema instance it has already seen, and not every MCP client resolves
+// $ref. Each call site gets its own instance so the schema is inlined.
+const metafieldEntrySchema = () =>
+  z.object({
+    namespace: z.string().min(1).describe("Metafield namespace (e.g. 'custom')"),
+    key: z.string().min(1).describe("Metafield key (e.g. 'sale_type', 'jet_size')"),
+    value: z
+      .string()
+      .describe(
+        "Value as a string. For reference types pass the target GID; for list types pass a JSON array string."
+      ),
+    type: z
+      .string()
+      .optional()
+      .describe(
+        "Metafield type. Omit to inherit the field's definition type (recommended when a definition exists). Common: single_line_text_field, number_decimal, metaobject_reference, list.metaobject_reference."
+      )
+  });
 
 export const BulkSetVariantMetafieldsInputSchema = z
   .object({
@@ -25,7 +29,7 @@ export const BulkSetVariantMetafieldsInputSchema = z
       .min(1)
       .describe("Product whose variants to update (numeric or full GID)"),
     metafields: z
-      .array(MetafieldEntrySchema)
+      .array(metafieldEntrySchema())
       .min(1)
       .optional()
       .describe(
@@ -51,7 +55,7 @@ export const BulkSetVariantMetafieldsInputSchema = z
               .optional()
               .describe("SKU to set on this specific variant"),
             metafields: z
-              .array(MetafieldEntrySchema)
+              .array(metafieldEntrySchema())
               .min(1)
               .optional()
               .describe("Metafields to set on this specific variant")
@@ -84,7 +88,7 @@ type BulkSetVariantMetafieldsInput = z.infer<
   typeof BulkSetVariantMetafieldsInputSchema
 >;
 
-type MetafieldEntry = z.infer<typeof MetafieldEntrySchema>;
+type MetafieldEntry = z.infer<ReturnType<typeof metafieldEntrySchema>>;
 
 type VariantMetafield = {
   namespace: string;

@@ -4,7 +4,10 @@ import { z } from "zod";
 
 // Input schema for updating a customer
 const UpdateCustomerInputSchema = z.object({
-  id: z.string().regex(/^\d+$/, "Customer ID must be numeric"),
+  id: z
+    .string()
+    .regex(/^\d+$/, "Customer ID must be numeric")
+    .describe("Shopify customer ID, numeric excluding gid prefix"),
   firstName: z.string().optional(),
   lastName: z.string().optional(),
   email: z.string().email().optional(),
