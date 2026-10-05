@@ -73,7 +73,7 @@ export type ToolModule = {
   description: string;
   schema: z.ZodTypeAny;
   // Each tool narrows its own input type; the registry only forwards the
-  // arguments the MCP server has already validated against `schema`.
+  // arguments the MCP server has already validated against the schema's shape.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   execute: (input: any) => Promise<unknown>;
 };
@@ -159,10 +159,22 @@ export const allTools: ToolModule[] = [
 ];
 
 /**
- * `McpServer.tool()` takes a raw zod shape, not a zod object. Unwrap any
- * `.refine()` / `.superRefine()` layers to reach the object underneath; the
- * tools that add refinements re-run `schema.parse` inside `execute`, so those
- * rules still apply.
+ * Tools exposed for one transport. Remote mode hands out upload URLs; local
+ * mode can read files straight from the host.
+ */
+export function toolsForMode(remoteMode: boolean): ToolModule[] {
+  return [
+    ...shopifyClientTools,
+    ...(remoteMode ? remoteOnlyTools : localOnlyTools),
+  ];
+}
+
+/**
+ * `McpServer.tool()` takes a raw zod shape, not a zod object, so the server
+ * validates fields but not object-level `.refine()` / `.superRefine()` rules.
+ * Unwrap those layers to reach the object underneath. The tools that add
+ * refinements enforce them inside `execute`, either by re-running
+ * `schema.parse` or with explicit checks.
  */
 export function toolInputShape(tool: ToolModule): z.ZodRawShape {
   let current: z.ZodTypeAny = tool.schema;

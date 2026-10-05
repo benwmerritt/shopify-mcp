@@ -6,11 +6,17 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { z } from "zod";
 
-import { READ_ONLY_TOOL_NAMES, WRITE_TOOL_NAMES } from "../src/toolAccess.js";
+import {
+  READ_ONLY_TOOL_NAMES,
+  WRITE_TOOL_NAMES,
+  applyToolAccessPolicy,
+} from "../src/toolAccess.js";
 import {
   allTools,
   registerTool,
+  shopifyClientTools,
   toolInputShape,
+  toolsForMode,
   type ToolModule,
 } from "../src/toolRegistry.js";
 
@@ -45,6 +51,36 @@ describe("tool registry", () => {
       expect(typeof shape).toBe("object");
       expect(tool.description.length).toBeGreaterThan(0);
     }
+  });
+
+  it("selects upload tools by transport", async () => {
+    const shared = shopifyClientTools.map((tool) => tool.name).sort();
+    const listNames = async (remoteMode: boolean, readOnly: boolean) => {
+      const server = applyToolAccessPolicy(
+        new McpServer({ name: "test", version: "0" }),
+        readOnly,
+      );
+      for (const tool of toolsForMode(remoteMode)) {
+        registerTool(server, tool);
+      }
+      const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+      const client = new Client({ name: "test-client", version: "0" });
+      await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
+      const { tools } = await client.listTools();
+      await client.close();
+      await server.close();
+      return tools.map((tool) => tool.name).sort();
+    };
+
+    expect(await listNames(false, false)).toEqual([...shared, "upload-local-file"].sort());
+    expect(await listNames(true, false)).toEqual(
+      [...shared, "create-file-upload-session", "get-file-upload-session"].sort(),
+    );
+
+    const readOnlyIn = (names: string[]) =>
+      names.filter((name) => READ_ONLY_TOOL_NAMES.has(name) && !WRITE_TOOL_NAMES.has(name));
+    expect(await listNames(false, true)).toEqual(readOnlyIn(await listNames(false, false)));
+    expect(await listNames(true, true)).toEqual(readOnlyIn(await listNames(true, false)));
   });
 
   it("only allowlists tool names that exist", () => {

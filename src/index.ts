@@ -16,10 +16,9 @@ import minimist from "minimist";
 import multer from "multer";
 
 import {
-  localOnlyTools,
   registerTool,
-  remoteOnlyTools,
   shopifyClientTools,
+  toolsForMode,
 } from "./toolRegistry.js";
 import { createFileUploadSession } from "./tools/createFileUploadSession.js";
 import { getFileUploadSession } from "./tools/getFileUploadSession.js";
@@ -124,12 +123,7 @@ async function startServer(
     localMode: !REMOTE_MODE,
   });
 
-  // Upload tools depend on the transport: remote mode hands out upload URLs,
-  // local mode can read files straight from the host.
-  const toolsForMode = [
-    ...shopifyClientTools,
-    ...(REMOTE_MODE ? remoteOnlyTools : localOnlyTools),
-  ];
+  const tools = toolsForMode(REMOTE_MODE);
 
   // Function to create a new MCP server with all tools registered
   // This is called per-connection in remote mode, once in local mode
@@ -148,7 +142,7 @@ async function startServer(
       console.error("Shopify MCP read-only mode enabled: fail-closed tool allowlist active");
     }
 
-    for (const tool of toolsForMode) {
+    for (const tool of tools) {
       registerTool(server, tool);
     }
 
