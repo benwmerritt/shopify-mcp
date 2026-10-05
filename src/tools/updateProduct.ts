@@ -185,6 +185,11 @@ const updateProduct = {
   execute: async (
     input: UpdateProductInput,
   ): Promise<{ product: Record<string, any>; redirectNewHandle?: boolean; warnings?: string[] }> => {
+    // Shopify has no transaction across mutations. Once productSet has
+    // committed, any later failure (a userError or a rejected request) leaves
+    // the product-level edits in place, so the error says so and the caller
+    // can retry just the later steps.
+    let productLevelApplied = false;
     try {
       const productId = normalizeProductId(input.id);
 
@@ -555,12 +560,7 @@ const updateProduct = {
         }
       }
 
-      // Shopify has no transaction across mutations. Once productSet has
-      // committed, a failed variant write leaves the product-level edits in
-      // place, so the error says so and the caller can retry just the variants.
-      const partialWritePrefix = product
-        ? "Product-level fields were applied; variant write failed: "
-        : "";
+      productLevelApplied = product !== null;
 
       // New variants must use the purpose-built bulk-create mutation. The
       // public ProductSetInput schema does not expose variants[].optionValues
@@ -605,7 +605,7 @@ const updateProduct = {
         };
         if (bulkCreateData.productVariantsBulkCreate.userErrors.length > 0) {
           throw new Error(
-            `${partialWritePrefix}Failed to create product variants: ${formatUserErrors(bulkCreateData.productVariantsBulkCreate.userErrors)}`,
+            `Failed to create product variants: ${formatUserErrors(bulkCreateData.productVariantsBulkCreate.userErrors)}`,
           );
         }
         createdVariants = true;
@@ -639,7 +639,7 @@ const updateProduct = {
 
         if (bulkData.productVariantsBulkUpdate.userErrors.length > 0) {
           throw new Error(
-            `${partialWritePrefix}Failed to update product variants: ${formatUserErrors(bulkData.productVariantsBulkUpdate.userErrors)}`
+            `Failed to update product variants: ${formatUserErrors(bulkData.productVariantsBulkUpdate.userErrors)}`
           );
         }
       }
@@ -662,10 +662,11 @@ const updateProduct = {
       return formatProduct(product);
     } catch (error) {
       console.error("Error updating product:", error);
+      const message = error instanceof Error ? error.message : String(error);
       throw new Error(
-        `Failed to update product: ${
-          error instanceof Error ? error.message : String(error)
-        }`
+        productLevelApplied
+          ? `Product-level fields were applied; a later step failed: ${message}`
+          : `Failed to update product: ${message}`,
       );
     }
   },

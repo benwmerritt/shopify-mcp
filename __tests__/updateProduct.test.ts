@@ -774,7 +774,7 @@ describe("update-product ordering guards", () => {
     await expect(
       updateProduct.execute({ id: "123", title: "T", variants: [{ id: "999", price: "5.00" }] }),
     ).rejects.toThrow(
-      /Product-level fields were applied; variant write failed: Failed to update product variants: variants\.0\.id: Product variant does not exist/,
+      /Product-level fields were applied; a later step failed: Failed to update product variants: variants\.0\.id: Product variant does not exist/,
     );
     expect(request).toHaveBeenCalledTimes(2);
   });
@@ -803,7 +803,26 @@ describe("update-product ordering guards", () => {
         variants: [{ optionValues: [{ optionName: "Size", name: "L" }] }],
       }),
     ).rejects.toThrow(
-      /Product-level fields were applied; variant write failed: Failed to create product variants: Option does not exist/,
+      /Product-level fields were applied; a later step failed: Failed to create product variants: Option does not exist/,
+    );
+  });
+
+  it("says product-level fields were applied when a later request is rejected outright", async () => {
+    const request = jest
+      .fn()
+      .mockResolvedValueOnce({
+        productSet: {
+          product: { ...PRODUCT_FIELDS, title: "T", variants: { edges: [] }, images: { edges: [] } },
+          userErrors: [],
+        },
+      })
+      .mockRejectedValueOnce(new Error("Access denied for productVariantsBulkUpdate"));
+
+    updateProduct.initialize({ request } as any);
+    await expect(
+      updateProduct.execute({ id: "123", title: "T", variants: [{ id: "999", price: "5.00" }] }),
+    ).rejects.toThrow(
+      /^Product-level fields were applied; a later step failed: Access denied for productVariantsBulkUpdate$/,
     );
   });
 
