@@ -753,6 +753,91 @@ describe("update-product ordering guards", () => {
     expect(request).toHaveBeenCalledTimes(1);
     expect(String(request.mock.calls[0][0])).toContain("mutation productSet");
   });
+
+  it("says product-level fields were applied when a later variant update fails", async () => {
+    const request = jest
+      .fn()
+      .mockResolvedValueOnce({
+        productSet: {
+          product: { ...PRODUCT_FIELDS, title: "T", variants: { edges: [] }, images: { edges: [] } },
+          userErrors: [],
+        },
+      })
+      .mockResolvedValueOnce({
+        productVariantsBulkUpdate: {
+          productVariants: [],
+          userErrors: [{ field: ["variants", "0", "id"], message: "Product variant does not exist" }],
+        },
+      });
+
+    updateProduct.initialize({ request } as any);
+    await expect(
+      updateProduct.execute({ id: "123", title: "T", variants: [{ id: "999", price: "5.00" }] }),
+    ).rejects.toThrow(
+      /Product-level fields were applied; variant write failed: Failed to update product variants: variants\.0\.id: Product variant does not exist/,
+    );
+    expect(request).toHaveBeenCalledTimes(2);
+  });
+
+  it("says product-level fields were applied when a later variant create fails", async () => {
+    const request = jest
+      .fn()
+      .mockResolvedValueOnce({
+        productSet: {
+          product: { ...PRODUCT_FIELDS, title: "T", variants: { edges: [] }, images: { edges: [] } },
+          userErrors: [],
+        },
+      })
+      .mockResolvedValueOnce({
+        productVariantsBulkCreate: {
+          productVariants: [],
+          userErrors: [{ field: null, message: "Option does not exist" }],
+        },
+      });
+
+    updateProduct.initialize({ request } as any);
+    await expect(
+      updateProduct.execute({
+        id: "123",
+        title: "T",
+        variants: [{ optionValues: [{ optionName: "Size", name: "L" }] }],
+      }),
+    ).rejects.toThrow(
+      /Product-level fields were applied; variant write failed: Failed to create product variants: Option does not exist/,
+    );
+  });
+
+  it("does not claim product-level fields were applied when none were sent", async () => {
+    const request = jest.fn().mockResolvedValueOnce({
+      productVariantsBulkUpdate: {
+        productVariants: [],
+        userErrors: [{ field: ["variants", "0", "id"], message: "Product variant does not exist" }],
+      },
+    });
+
+    updateProduct.initialize({ request } as any);
+    const err = await updateProduct
+      .execute({ id: "123", variants: [{ id: "999", price: "5.00" }] })
+      .catch((e: Error) => e);
+    expect(String(err)).toMatch(/Failed to update product variants: variants\.0\.id/);
+    expect(String(err)).not.toMatch(/Product-level fields were applied/);
+  });
+});
+
+describe("update-product handle+redirect userErrors", () => {
+  it("formats a userError with a null field instead of crashing", async () => {
+    const request = jest.fn().mockResolvedValueOnce({
+      productUpdate: {
+        product: null,
+        userErrors: [{ field: null, message: "Handle has already been taken" }],
+      },
+    });
+
+    updateProduct.initialize({ request } as any);
+    await expect(
+      updateProduct.execute({ id: "123", handle: "taken", redirectNewHandle: true }),
+    ).rejects.toThrow(/Handle has already been taken/);
+  });
 });
 
 describe("update-product pre-mutation money validation", () => {

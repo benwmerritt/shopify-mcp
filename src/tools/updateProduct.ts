@@ -123,6 +123,14 @@ export function buildInventoryItemInput(
   };
 }
 
+// Shopify returns `field: null` on some userErrors (e.g. a rejected mutation
+// as a whole), so the path is only prefixed when one is present.
+type UserError = { field: string[] | null; message: string };
+const formatUserErrors = (errors: UserError[]): string =>
+  errors
+    .map((e) => (e.field?.length ? `${e.field.join(".")}: ${e.message}` : e.message))
+    .join(", ");
+
 // inventoryItem.unitCost needs the read_inventory scope, so it is only
 // selected when the caller actually wrote a cost. Cost-less updates must keep
 // working on tokens that only carry product scopes.
@@ -228,12 +236,11 @@ const updateProduct = {
               images: { edges: Array<{ node: Record<string, unknown> }> };
               [key: string]: unknown;
             };
-            userErrors: Array<{ field: string[]; message: string }>;
+            userErrors: UserError[];
           };
         };
         if (handleData.productUpdate.userErrors.length > 0) {
-          throw new Error(handleData.productUpdate.userErrors
-            .map((e) => `${e.field.join(".")}: ${e.message}`).join(", "));
+          throw new Error(formatUserErrors(handleData.productUpdate.userErrors));
         }
         const product = handleData.productUpdate.product;
         if (!product) throw new Error("Product handle update returned no product");
@@ -334,14 +341,12 @@ const updateProduct = {
         )) as {
           productOptionUpdate: {
             product: { options: Array<{ id: string; name: string }> } | null;
-            userErrors: Array<{ field: string[] | null; message: string }>;
+            userErrors: UserError[];
           };
         };
         if (renameData.productOptionUpdate.userErrors.length > 0) {
           throw new Error(
-            `option rename: ${renameData.productOptionUpdate.userErrors
-              .map((e) => (e.field?.length ? `${e.field.join(".")}: ${e.message}` : e.message))
-              .join(", ")}`,
+            `option rename: ${formatUserErrors(renameData.productOptionUpdate.userErrors)}`,
           );
         }
         const renamed = renameData.productOptionUpdate.product?.options.find((o) => o.id === option.id);
@@ -527,15 +532,13 @@ const updateProduct = {
         })) as {
           productSet: {
             product: ProductPayload | null;
-            userErrors: Array<{ field: string[] | null; message: string }>;
+            userErrors: UserError[];
           };
         };
 
         if (data.productSet.userErrors.length > 0) {
           throw new Error(
-            `Failed to update product: ${data.productSet.userErrors
-              .map((e) => (e.field?.length ? `${e.field.join(".")}: ${e.message}` : e.message))
-              .join(", ")}`
+            `Failed to update product: ${formatUserErrors(data.productSet.userErrors)}`
           );
         }
 
@@ -551,6 +554,13 @@ const updateProduct = {
           verifyCategorySet(product, input.category);
         }
       }
+
+      // Shopify has no transaction across mutations. Once productSet has
+      // committed, a failed variant write leaves the product-level edits in
+      // place, so the error says so and the caller can retry just the variants.
+      const partialWritePrefix = product
+        ? "Product-level fields were applied; variant write failed: "
+        : "";
 
       // New variants must use the purpose-built bulk-create mutation. The
       // public ProductSetInput schema does not expose variants[].optionValues
@@ -590,13 +600,12 @@ const updateProduct = {
         })) as {
           productVariantsBulkCreate: {
             productVariants: Array<Record<string, unknown>>;
-            userErrors: Array<{ field: string[] | null; message: string }>;
+            userErrors: UserError[];
           };
         };
         if (bulkCreateData.productVariantsBulkCreate.userErrors.length > 0) {
           throw new Error(
-            `Failed to create product variants: ${bulkCreateData.productVariantsBulkCreate.userErrors
-              .map((e) => (e.field?.length ? `${e.field.join(".")}: ${e.message}` : e.message)).join(", ")}`,
+            `${partialWritePrefix}Failed to create product variants: ${formatUserErrors(bulkCreateData.productVariantsBulkCreate.userErrors)}`,
           );
         }
         createdVariants = true;
@@ -624,15 +633,13 @@ const updateProduct = {
         })) as {
           productVariantsBulkUpdate: {
             productVariants: Array<Record<string, unknown>>;
-            userErrors: Array<{ field: string[] | null; message: string }>;
+            userErrors: UserError[];
           };
         };
 
         if (bulkData.productVariantsBulkUpdate.userErrors.length > 0) {
           throw new Error(
-            `Failed to update product variants: ${bulkData.productVariantsBulkUpdate.userErrors
-              .map((e) => (e.field?.length ? `${e.field.join(".")}: ${e.message}` : e.message))
-              .join(", ")}`
+            `${partialWritePrefix}Failed to update product variants: ${formatUserErrors(bulkData.productVariantsBulkUpdate.userErrors)}`
           );
         }
       }
