@@ -552,14 +552,18 @@ const updateProduct = {
         }
 
         product = data.productSet.product;
-        // Everything else in the productSet input has committed at this point,
-        // even if the category check below rejects.
-        productLevelApplied = true;
+        // Every field other than category has committed at this point, even
+        // if the category check below rejects. A category-only request has
+        // applied nothing until that check passes.
+        productLevelApplied = Object.keys(productInput).some(
+          (key) => key !== "id" && key !== "category",
+        );
 
         // Loud-fail if the caller asked to set the category and Shopify silently
         // ignored it (invalid taxonomy GID, wrong namespace, etc).
         if (input.category !== undefined) {
           verifyCategorySet(product, input.category);
+          productLevelApplied = true;
         }
       }
 

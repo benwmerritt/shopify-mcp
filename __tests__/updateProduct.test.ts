@@ -840,6 +840,20 @@ describe("update-product ordering guards", () => {
     ).rejects.toThrow(/^Product-level fields were applied; a later step failed: Category did not stick/);
   });
 
+  it("does not claim product-level fields were applied when only the category was sent and it did not stick", async () => {
+    const request = jest.fn().mockResolvedValueOnce({
+      productSet: {
+        product: { ...PRODUCT_FIELDS, category: null, variants: { edges: [] }, images: { edges: [] } },
+        userErrors: [],
+      },
+    });
+
+    updateProduct.initialize({ request } as any);
+    await expect(
+      updateProduct.execute({ id: "123", category: "gid://shopify/TaxonomyCategory/bogus" }),
+    ).rejects.toThrow(/^Failed to update product: Category did not stick/);
+  });
+
   it("does not claim product-level fields were applied when none were sent", async () => {
     const request = jest.fn().mockResolvedValueOnce({
       productVariantsBulkUpdate: {
