@@ -552,6 +552,9 @@ const updateProduct = {
         }
 
         product = data.productSet.product;
+        // Everything else in the productSet input has committed at this point,
+        // even if the category check below rejects.
+        productLevelApplied = true;
 
         // Loud-fail if the caller asked to set the category and Shopify silently
         // ignored it (invalid taxonomy GID, wrong namespace, etc).
@@ -559,8 +562,6 @@ const updateProduct = {
           verifyCategorySet(product, input.category);
         }
       }
-
-      productLevelApplied = product !== null;
 
       // New variants must use the purpose-built bulk-create mutation. The
       // public ProductSetInput schema does not expose variants[].optionValues
