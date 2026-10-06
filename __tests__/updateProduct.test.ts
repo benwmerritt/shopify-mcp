@@ -983,7 +983,7 @@ describe("update-product cost read back without read_inventory", () => {
     expect(result.warnings).toEqual([expect.stringMatching(/cost was written but could not be read back.*read_inventory/)]);
   });
 
-  it("still fails when a cost-less read back errors", async () => {
+  it("names the applied variant updates when a cost-less read back errors", async () => {
     const request = jest
       .fn()
       .mockResolvedValueOnce({
@@ -994,7 +994,7 @@ describe("update-product cost read back without read_inventory", () => {
     updateProduct.initialize({ request } as any);
     await expect(
       updateProduct.execute({ id: "123", variants: [{ id: "456", price: "1.00" }] }),
-    ).rejects.toThrow(/boom/);
+    ).rejects.toThrow(/^Variant updates were applied; a later step failed: boom$/);
     expect(request).toHaveBeenCalledTimes(2);
   });
 });

@@ -185,14 +185,12 @@ const updateProduct = {
   execute: async (
     input: UpdateProductInput,
   ): Promise<{ product: Record<string, any>; redirectNewHandle?: boolean; warnings?: string[] }> => {
-    // Shopify has no transaction across mutations. Once productSet has
-    // committed, any later failure (a userError or a rejected request) leaves
-    // the product-level edits in place, so the error says so and the caller
-    // can retry just the later steps.
-    let productLevelApplied = false;
-    // Same for productOptionUpdate: once the rename is verified, a failed read
-    // back must not report the rename as failed, since `from` is already gone.
-    let renameApplied = false;
+    // Shopify has no transaction across mutations. Once a write has committed
+    // (productSet, productOptionUpdate, bulk create, bulk update), any later
+    // failure, whether a userError, a rejected request or a failed read back,
+    // leaves it in place, so the error names what applied and the caller can
+    // retry just the later steps.
+    const applied: string[] = [];
     try {
       const productId = normalizeProductId(input.id);
 
@@ -363,7 +361,7 @@ const updateProduct = {
             `Option rename did not apply: option ${option.id} is "${renamed ? renamed.name : "missing"}" (expected "${to}")`,
           );
         }
-        renameApplied = true;
+        applied.push("option rename was applied");
       }
 
       // Only select (and return) cost when the caller wrote one - see
@@ -559,15 +557,15 @@ const updateProduct = {
         // Every field other than category has committed at this point, even
         // if the category check below rejects. A category-only request has
         // applied nothing until that check passes.
-        productLevelApplied = Object.keys(productInput).some(
-          (key) => key !== "id" && key !== "category",
-        );
+        if (Object.keys(productInput).some((key) => key !== "id" && key !== "category")) {
+          applied.push("product-level fields were applied");
+        }
 
         // Loud-fail if the caller asked to set the category and Shopify silently
         // ignored it (invalid taxonomy GID, wrong namespace, etc).
         if (input.category !== undefined) {
           verifyCategorySet(product, input.category);
-          productLevelApplied = true;
+          if (applied.length === 0) applied.push("product-level fields were applied");
         }
       }
 
@@ -618,6 +616,7 @@ const updateProduct = {
           );
         }
         createdVariants = true;
+        applied.push("new variants were created");
       }
 
       if (variantsToUpdate.length > 0) {
@@ -651,6 +650,7 @@ const updateProduct = {
             `Failed to update product variants: ${formatUserErrors(bulkData.productVariantsBulkUpdate.userErrors)}`
           );
         }
+        applied.push("variant updates were applied");
       }
 
       if (createdVariants || variantsToUpdate.length > 0) {
@@ -672,12 +672,12 @@ const updateProduct = {
     } catch (error) {
       console.error("Error updating product:", error);
       const message = error instanceof Error ? error.message : String(error);
+      if (applied.length === 0) {
+        throw new Error(`Failed to update product: ${message}`);
+      }
+      const summary = applied.join(" and ");
       throw new Error(
-        productLevelApplied
-          ? `Product-level fields were applied; a later step failed: ${message}`
-          : renameApplied
-            ? `Option rename was applied; a later step failed: ${message}`
-            : `Failed to update product: ${message}`,
+        `${summary[0].toUpperCase()}${summary.slice(1)}; a later step failed: ${message}`,
       );
     }
   },
