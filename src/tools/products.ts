@@ -57,6 +57,35 @@ function escapeWildcardSearch(value: string): string {
     .replace(/'/g, "\\'");
 }
 
+const VARIANT_FIELDS = `
+                    id
+                    title
+                    price
+                    inventoryQuantity
+                    sku
+                    selectedOptions {
+                      name
+                      value
+                    }`;
+
+const VARIANT_PAGE_QUERY = gql`
+  query GetProductVariantsPage($id: ID!, $after: String) {
+    product(id: $id) {
+      variants(first: 250, after: $after) {
+        edges {
+          node {
+            ${VARIANT_FIELDS}
+          }
+        }
+        pageInfo {
+          hasNextPage
+          endCursor
+        }
+      }
+    }
+  }
+`;
+
 // Helper to normalize product ID to GID format
 function normalizeProductId(id: string): string {
   if (id.startsWith("gid://")) {
@@ -157,19 +186,18 @@ const products = {
                   }
                 }
               }
-              variants(first: 50) {
+              variantsCount {
+                count
+              }
+              variants(first: 250) {
                 edges {
                   node {
-                    id
-                    title
-                    price
-                    inventoryQuantity
-                    sku
-                    selectedOptions {
-                      name
-                      value
-                    }
+                    ${VARIANT_FIELDS}
                   }
+                }
+                pageInfo {
+                  hasNextPage
+                  endCursor
                 }
               }
               collections(first: 10) {
@@ -193,6 +221,17 @@ const products = {
         }
 
         const product = data.product;
+        // Page through every variant (Shopify returns at most 250 per page).
+        let variantEdges = product.variants.edges;
+        let pageInfo = product.variants.pageInfo;
+        while (pageInfo?.hasNextPage) {
+          const page = (await shopifyClient.request(VARIANT_PAGE_QUERY, {
+            id: productId,
+            after: pageInfo.endCursor,
+          })) as { product: any };
+          variantEdges = variantEdges.concat(page.product.variants.edges);
+          pageInfo = page.product.variants.pageInfo;
+        }
         const hasImagesFlag = product.images.edges.length > 0;
 
         const formattedProduct = {
@@ -215,7 +254,8 @@ const products = {
             maxPrice: product.priceRangeV2.maxVariantPrice
           },
           images: product.images.edges.map((edge: any) => edge.node),
-          variants: product.variants.edges.map((edge: any) => ({
+          variantsCount: product.variantsCount?.count ?? null,
+          variants: variantEdges.map((edge: any) => ({
             ...edge.node,
             options: edge.node.selectedOptions
           })),
