@@ -23,6 +23,14 @@ const CreateMetafieldDefinitionInputSchema = z.object({
   ownerType: MetafieldOwnerTypeSchema.describe("Resource type that owns the metafield"),
   type: z.string().min(1).describe("Shopify metafield type, for example 'number_decimal'"),
   description: z.string().optional().describe("Administrative description"),
+  access: z
+    .object({
+      admin: z.enum(["MERCHANT_READ", "MERCHANT_READ_WRITE"]).optional(),
+      storefront: z.enum(["NONE", "PUBLIC_READ"]).optional(),
+    })
+    .strict()
+    .optional()
+    .describe("Optional Admin and Storefront API access permissions"),
   validations: z
     .array(z.object({ name: z.string().min(1), value: z.string() }))
     .optional()
@@ -97,7 +105,11 @@ function assertDefinitionVerified(
     definition.ownerType !== input.ownerType ||
     definition.type.name !== input.type ||
     definition.description !== (input.description ?? null) ||
-    JSON.stringify(actualValidations) !== JSON.stringify(expectedValidations)
+    JSON.stringify(actualValidations) !== JSON.stringify(expectedValidations) ||
+    (input.access?.admin !== undefined &&
+      definition.access.admin !== input.access.admin) ||
+    (input.access?.storefront !== undefined &&
+      definition.access.storefront !== input.access.storefront)
   ) {
     throw new Error(
       `Verification failed: metafield definition '${input.namespace}.${input.key}' does not match submitted values`,
@@ -136,6 +148,7 @@ const createMetafieldDefinition = {
           ...(input.description !== undefined
             ? { description: input.description }
             : {}),
+          ...(input.access !== undefined ? { access: input.access } : {}),
           ...(input.validations !== undefined
             ? { validations: input.validations }
             : {}),
