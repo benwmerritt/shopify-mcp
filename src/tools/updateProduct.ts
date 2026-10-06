@@ -190,6 +190,9 @@ const updateProduct = {
     // the product-level edits in place, so the error says so and the caller
     // can retry just the later steps.
     let productLevelApplied = false;
+    // Same for productOptionUpdate: once the rename is verified, a failed read
+    // back must not report the rename as failed, since `from` is already gone.
+    let renameApplied = false;
     try {
       const productId = normalizeProductId(input.id);
 
@@ -360,6 +363,7 @@ const updateProduct = {
             `Option rename did not apply: option ${option.id} is "${renamed ? renamed.name : "missing"}" (expected "${to}")`,
           );
         }
+        renameApplied = true;
       }
 
       // Only select (and return) cost when the caller wrote one - see
@@ -671,7 +675,9 @@ const updateProduct = {
       throw new Error(
         productLevelApplied
           ? `Product-level fields were applied; a later step failed: ${message}`
-          : `Failed to update product: ${message}`,
+          : renameApplied
+            ? `Option rename was applied; a later step failed: ${message}`
+            : `Failed to update product: ${message}`,
       );
     }
   },

@@ -503,6 +503,30 @@ describe("update-product renameOption", () => {
     ).rejects.toThrow(/Option rename did not apply/);
   });
 
+  it("names the applied rename when only the read back fails", async () => {
+    // productOptionUpdate has committed; a throttled or failed read must not
+    // tell the caller to retry a rename whose `from` no longer exists.
+    const request = jest
+      .fn()
+      .mockResolvedValueOnce({ product: { options } })
+      .mockResolvedValueOnce({
+        productOptionUpdate: {
+          product: { options: [
+            { id: "gid://shopify/ProductOption/1", name: "Model" },
+            { id: "gid://shopify/ProductOption/2", name: "Size" },
+          ] },
+          userErrors: [],
+        },
+      })
+      .mockRejectedValueOnce(new Error("Throttled"));
+
+    updateProduct.initialize({ request } as any);
+    await expect(
+      updateProduct.execute({ id: "123", renameOption: { from: "Voltage", to: "Model" } }),
+    ).rejects.toThrow(/^Option rename was applied; a later step failed: Throttled$/);
+    expect(request).toHaveBeenCalledTimes(3);
+  });
+
   it("rejects renameOption combined with any other write before mutating", async () => {
     // productOptionUpdate cannot be rolled back, so a later failing write
     // would leave the rename applied and `from` gone for a retry.
