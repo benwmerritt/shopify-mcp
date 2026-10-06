@@ -51,6 +51,7 @@ import { deleteMetafield } from "./tools/deleteMetafield.js";
 import { setMetafield } from "./tools/setMetafield.js";
 import { listMetafieldDefinitions } from "./tools/listMetafieldDefinitions.js";
 import { createMetafieldDefinition } from "./tools/createMetafieldDefinition.js";
+import { updateMetafieldDefinitionAccess } from "./tools/updateMetafieldDefinitionAccess.js";
 import { getMetafieldOptions } from "./tools/getMetafieldOptions.js";
 import { createMetaobject } from "./tools/createMetaobject.js";
 import { updateMetaobject } from "./tools/updateMetaobject.js";
@@ -199,6 +200,7 @@ async function startServer(
   setMetafield.initialize(shopifyClient);
   listMetafieldDefinitions.initialize(shopifyClient);
   createMetafieldDefinition.initialize(shopifyClient);
+  updateMetafieldDefinitionAccess.initialize(shopifyClient);
   getMetafieldOptions.initialize(shopifyClient);
   createMetaobject.initialize(shopifyClient);
   updateMetaobject.initialize(shopifyClient);
@@ -1387,35 +1389,22 @@ async function startServer(
     // Create a metafield definition
     server.tool(
       "create-metafield-definition",
-      {
-        name: z.string().min(1).describe("Human-readable metafield definition name"),
-        namespace: z
-          .string()
-          .min(1)
-          .describe("Metafield namespace, for example 'custom'"),
-        key: z.string().min(2).max(64).regex(/^[a-zA-Z0-9_-]+$/),
-        ownerType: z.enum([
-          "PRODUCT",
-          "PRODUCTVARIANT",
-          "CUSTOMER",
-          "ORDER",
-          "COLLECTION",
-          "SHOP",
-        ]),
-        type: z
-          .string()
-          .min(1)
-          .describe("Shopify metafield type, for example 'number_decimal'"),
-        description: z.string().optional(),
-        validations: z
-          .array(z.object({ name: z.string().min(1), value: z.string() }))
-          .optional(),
-      },
+      createMetafieldDefinition.schema.shape,
       async (args) => {
         const result = await createMetafieldDefinition.execute(args);
         return {
           content: [{ type: "text", text: JSON.stringify(result) }],
         };
+      },
+    );
+
+    // Resolve a metafield's selectable options in one call
+    server.tool(
+      "update-metafield-definition-access",
+      updateMetafieldDefinitionAccess.schema.shape,
+      async (args) => {
+        const result = await updateMetafieldDefinitionAccess.execute(args);
+        return { content: [{ type: "text", text: JSON.stringify(result) }] };
       },
     );
 
