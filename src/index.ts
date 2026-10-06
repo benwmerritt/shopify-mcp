@@ -124,6 +124,12 @@ async function startServer(
 
   const tools = toolsForMode(REMOTE_MODE);
 
+  // Log once here: createMcpServer() runs per connection over stdio and SSE,
+  // and per request through the stateless HTTP handler.
+  if (READ_ONLY_MODE) {
+    console.error("Shopify MCP read-only mode enabled: fail-closed tool allowlist active");
+  }
+
   // Function to create a new MCP server with all tools registered
   // This is called per-connection in remote mode, once in local mode
   function createMcpServer(): McpServer {
@@ -136,10 +142,6 @@ async function startServer(
     });
 
     applyToolAccessPolicy(server, READ_ONLY_MODE);
-
-    if (READ_ONLY_MODE) {
-      console.error("Shopify MCP read-only mode enabled: fail-closed tool allowlist active");
-    }
 
     for (const tool of tools) {
       registerTool(server, tool);
