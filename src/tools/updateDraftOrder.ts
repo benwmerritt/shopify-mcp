@@ -2,10 +2,10 @@ import type { GraphQLClient } from "graphql-request";
 import { gql } from "graphql-request";
 import { z } from "zod";
 
-// Address input schema. A factory rather than a shared constant:
-// zod-to-json-schema emits a $ref for every schema instance it has already
-// seen, and not every MCP client resolves $ref. Each address gets its own
-// instance so both are inlined.
+// Address input schema. A factory rather than a shared constant so each
+// address is its own instance: JSON Schema serialisers may emit a $ref for a
+// reused instance, and not every MCP client resolves $ref. The registry test
+// asserts no served schema contains one.
 const addressInputSchema = () =>
   z.object({
     firstName: z.string().optional(),
