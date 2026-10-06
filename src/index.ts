@@ -1,10 +1,9 @@
 #!/usr/bin/env node
 
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-// import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
-import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
-// import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
+import { McpServer, createMcpHandler } from "@modelcontextprotocol/server";
+import { toNodeHandler } from "@modelcontextprotocol/node";
+import { serveStdio } from "@modelcontextprotocol/server/stdio";
+import { SSEServerTransport } from "@modelcontextprotocol/server-legacy/sse";
 import express, { Request, Response } from "express";
 import { mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -125,6 +124,12 @@ async function startServer(
 
   const tools = toolsForMode(REMOTE_MODE);
 
+  // Log once here: createMcpServer() runs per connection over stdio and SSE,
+  // and per request through the stateless HTTP handler.
+  if (READ_ONLY_MODE) {
+    console.error("Shopify MCP read-only mode enabled: fail-closed tool allowlist active");
+  }
+
   // Function to create a new MCP server with all tools registered
   // This is called per-connection in remote mode, once in local mode
   function createMcpServer(): McpServer {
@@ -138,10 +143,6 @@ async function startServer(
 
     applyToolAccessPolicy(server, READ_ONLY_MODE);
 
-    if (READ_ONLY_MODE) {
-      console.error("Shopify MCP read-only mode enabled: fail-closed tool allowlist active");
-    }
-
     for (const tool of tools) {
       registerTool(server, tool);
     }
@@ -151,7 +152,7 @@ async function startServer(
 
   // Start the server based on mode
   if (REMOTE_MODE) {
-    // Remote mode: Express + SSE
+    // Remote mode: modern Streamable HTTP plus the existing SSE endpoints
     const app = express();
     const uploadTmpDir = join(tmpdir(), "shopify-mcp-uploads");
     mkdirSync(uploadTmpDir, { recursive: true });
@@ -168,11 +169,61 @@ async function startServer(
     }, 60_000);
     cleanupInterval.unref();
 
+    // Validate the actual Host header even when native clients omit Origin.
+    // Additional proxy/domain hostnames must be configured explicitly.
+    const allowedHosts = new Set([
+      new URL(publicAppUrl).hostname.toLowerCase(),
+      "localhost",
+      "127.0.0.1",
+      "[::1]",
+      ...(process.env.MCP_ALLOWED_HOSTS || "")
+        .split(",")
+        .map((host) => host.trim().toLowerCase())
+        .filter(Boolean),
+    ]);
+    app.use(["/mcp", "/messages"], (req, res, next) => {
+      // Match a hostname and optional port without URL parsing that could
+      // normalize userinfo, paths, escaped characters, or alternate IP forms.
+      const host = req.headers.host?.match(/^(\[[0-9a-f:]+\]|[a-z0-9.-]+)(?::[0-9]+)?$/i)?.[1];
+      if (!host || !allowedHosts.has(host.toLowerCase())) {
+        res.status(403).json({ error: "Forbidden: Host is not allowed" });
+        return;
+      }
+      next();
+    });
+
+    // Browser origins are checked separately from the destination hostname.
+    const allowedOrigins = new Set([
+      new URL(publicAppUrl).origin,
+      `http://localhost:${PORT}`,
+      `http://127.0.0.1:${PORT}`,
+      ...(process.env.MCP_ALLOWED_ORIGINS || "")
+        .split(",")
+        .map((origin) => origin.trim())
+        .filter(Boolean),
+    ]);
+    app.use(["/mcp", "/messages"], (req, res, next) => {
+      const origin = req.headers.origin;
+      if (origin && !allowedOrigins.has(origin)) {
+        res.status(403).json({ error: "Forbidden: Origin is not allowed" });
+        return;
+      }
+      next();
+    });
+
     // CORS middleware
     app.use((req, res, next) => {
       res.setHeader("Access-Control-Allow-Origin", "*");
-      res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-      res.setHeader("Access-Control-Allow-Headers", "*");
+      res.setHeader("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS");
+      // Authorization is not covered by a CORS wildcard. Echo the requested
+      // headers so browsers can also send future Mcp-Param-* headers.
+      res.setHeader(
+        "Access-Control-Allow-Headers",
+        req.headers["access-control-request-headers"] ||
+          "Authorization, Content-Type, MCP-Protocol-Version, Mcp-Method, Mcp-Name, Mcp-Session-Id",
+      );
+      res.vary("Access-Control-Request-Headers");
+      res.setHeader("Access-Control-Expose-Headers", "MCP-Protocol-Version, Mcp-Session-Id");
       if (req.method === "OPTIONS") return res.sendStatus(200);
       next();
     });
@@ -235,7 +286,10 @@ async function startServer(
 
     // API key validation middleware
     const validateApiKey = (req: Request, res: Response, next: () => void) => {
-      const apiKey = req.query.apiKey as string;
+      const authorization = req.headers.authorization;
+      const apiKey = authorization?.startsWith("Bearer ")
+        ? authorization.slice(7)
+        : req.query.apiKey;
       const expectedKey = process.env.MCP_API_KEY;
 
       if (!expectedKey) {
@@ -554,9 +608,28 @@ async function startServer(
       });
     });
 
+    // The factory gives modern requests and legacy stateless HTTP requests
+    // identical tools and access policy. Keep GET /mcp for existing SSE clients.
+    const httpHandler = createMcpHandler(createMcpServer, {
+      onerror: (error) => console.error("MCP HTTP error:", error),
+    });
+    const handleHttp = toNodeHandler(httpHandler, {
+      onerror: (error) => console.error("MCP HTTP adapter error:", error),
+    });
+    app.post("/mcp", validateApiKey, express.json(), (req, res) =>
+      handleHttp(req, res, req.body),
+    );
+    app.delete("/mcp", validateApiKey, (req, res) => handleHttp(req, res));
+
     // MCP endpoint - client connects here for server-sent events
     // Each connection gets its own McpServer instance (MCP servers are stateful per-connection)
     app.get("/mcp", validateApiKey, async (req: Request, res: Response) => {
+      // Streamable HTTP has no standalone GET stream here. Headerless GET is
+      // reserved for the original SSE URL, including old EventSource clients.
+      if (req.headers["mcp-protocol-version"] || req.headers["mcp-session-id"]) {
+        await handleHttp(req, res);
+        return;
+      }
       const apiKey = req.query.apiKey as string | undefined;
 
       try {
@@ -574,6 +647,7 @@ async function startServer(
 
         res.on("close", () => {
           sessions.delete(transport.sessionId);
+          void server.close().catch((error) => console.error("SSE cleanup error:", error));
           console.error(`SSE connection closed: ${transport.sessionId}`);
         });
 
@@ -586,8 +660,8 @@ async function startServer(
     // Messages endpoint - client sends messages here
     app.post(
       "/messages",
-      express.json(),
       validateApiKey,
+      express.json(),
       async (req: Request, res: Response) => {
         console.error(`POST /messages received`);
         const sessionId = req.query.sessionId as string | undefined;
@@ -604,18 +678,38 @@ async function startServer(
       },
     );
 
-    app.listen(PORT, () => {
+    // Unauthenticated development servers must not listen on external interfaces.
+    const httpServer = app.listen({
+      port: PORT,
+      host: process.env.MCP_API_KEY ? undefined : "127.0.0.1",
+    }, () => {
       console.error(`Shopify MCP Server running in REMOTE mode`);
-      console.error(`  Health: http://localhost:${PORT}/health`);
-      console.error(`  MCP:    http://localhost:${PORT}/mcp`);
+      const address = httpServer.address();
+      const listeningPort = typeof address === "object" && address ? address.port : PORT;
+      const listeningHost = process.env.MCP_API_KEY ? "localhost" : "127.0.0.1";
+      if (typeof address === "object" && address) {
+        console.error(`  Listening address: ${address.address}`);
+      }
+      console.error(`  Health: http://${listeningHost}:${listeningPort}/health`);
+      console.error(`  MCP:    http://${listeningHost}:${listeningPort}/mcp`);
       console.error(`  Public: ${publicAppUrl}`);
       console.error(`  Store:  ${domain}`);
     });
+    const shutdown = () => {
+      httpServer.close();
+      clearInterval(cleanupInterval);
+      void Promise.allSettled([
+        httpHandler.close(),
+        ...Array.from(sessions.values(), ({ server }) => server.close()),
+      ]).then(() => httpServer.closeAllConnections());
+    };
+    process.once("SIGTERM", shutdown);
+    process.once("SIGINT", shutdown);
   } else {
-    // Local mode: stdio transport - create single server instance
-    const server = createMcpServer();
-    const transport = new StdioServerTransport();
-    await server.connect(transport);
+    // The first message selects the protocol era for this stdio connection.
+    serveStdio(createMcpServer, {
+      onerror: (error) => console.error("MCP stdio error:", error),
+    });
   }
 }
 

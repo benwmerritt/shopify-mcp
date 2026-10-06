@@ -2,9 +2,9 @@ import type { GraphQLClient } from "graphql-request";
 import { gql } from "graphql-request";
 import { z } from "zod";
 
-// A factory rather than a shared constant: zod-to-json-schema emits a $ref for
-// every schema instance it has already seen, and not every MCP client resolves
-// $ref. Each call site gets its own instance so the schema is inlined.
+// A factory rather than a shared constant so each call site is its own
+// instance: JSON Schema serialisers may emit a $ref for a reused instance, and
+// not every MCP client resolves $ref. The registry test asserts none is served.
 const metafieldEntrySchema = () =>
   z.object({
     namespace: z.string().min(1).describe("Metafield namespace (e.g. 'custom')"),

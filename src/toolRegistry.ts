@@ -1,4 +1,4 @@
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import type { McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
 
 import { products } from "./tools/products.js";
@@ -72,9 +72,9 @@ import { reorderDraftProductMedia } from "./tools/reorderDraftProductMedia.js";
 export type ToolModule = {
   name: string;
   description: string;
-  schema: z.ZodTypeAny;
+  schema: z.ZodType;
   // Each tool narrows its own input type; the registry only forwards the
-  // arguments the MCP server has already validated against the schema's shape.
+  // arguments the MCP server has already validated against the schema.
   execute: (input: any) => Promise<unknown>;
 };
 
@@ -171,31 +171,39 @@ export function toolsForMode(remoteMode: boolean): ToolModule[] {
 }
 
 /**
- * `McpServer.tool()` takes a raw zod shape, not a zod object, so the server
- * validates fields but not object-level `.refine()` / `.superRefine()` rules.
- * Unwrap those layers to reach the object underneath. The tools that add
- * refinements enforce them inside `execute`, either by re-running
- * `schema.parse` or with explicit checks.
+ * The zod object handed to the MCP server as a tool's `inputSchema`.
+ *
+ * SDK v2 takes the whole schema, not a raw shape: it advertises
+ * `~standard.jsonSchema` in `tools/list` and runs `~standard.validate` on
+ * every `tools/call`. Passing the module's own object therefore enforces
+ * object-level `.refine()` / `.superRefine()` rules at the server, before
+ * `execute` runs; in zod 4 those return the same `ZodObject` and are simply
+ * omitted from the JSON Schema. The refining tools keep their own
+ * `schema.parse` as well, so direct callers of `execute` see the same errors.
+ *
+ * zod 4.6's JSON Schema output inlines reused sub-schema instances, so no
+ * `$ref` / `$defs` reach clients; `__tests__/toolRegistry.test.ts` guards that.
+ *
+ * MCP requires an object root, and the SDK only reports a non-object schema
+ * lazily (at `tools/list`), so check it here at registration time instead.
  */
-export function toolInputShape(tool: ToolModule): z.ZodRawShape {
-  let current: z.ZodTypeAny = tool.schema;
-  while (current instanceof z.ZodEffects) {
-    current = current.innerType();
-  }
-  if (!(current instanceof z.ZodObject)) {
+export function toolInputSchema(tool: ToolModule): z.ZodObject {
+  if (!(tool.schema instanceof z.ZodObject)) {
     throw new Error(
-      `Tool "${tool.name}" schema must be a zod object, got ${current.constructor.name}`,
+      `Tool "${tool.name}" schema must be a zod object, got ${tool.schema.constructor.name}`,
     );
   }
-  return current.shape;
+  return tool.schema;
 }
 
 /** Register one tool module on an MCP server, forwarding its result as a JSON text block. */
 export function registerTool(server: McpServer, tool: ToolModule): void {
-  server.tool(
+  server.registerTool(
     tool.name,
-    tool.description,
-    toolInputShape(tool),
+    {
+      description: tool.description,
+      inputSchema: toolInputSchema(tool),
+    },
     async (args) => {
       const result = await tool.execute(args);
       return {

@@ -1,9 +1,8 @@
 import { readdirSync } from "node:fs";
 import { join } from "node:path";
 
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
+import { InMemoryTransport, McpServer } from "@modelcontextprotocol/server";
+import { Client } from "@modelcontextprotocol/client";
 import { z } from "zod";
 
 import {
@@ -15,7 +14,7 @@ import {
   allTools,
   registerTool,
   shopifyClientTools,
-  toolInputShape,
+  toolInputSchema,
   toolsForMode,
   type ToolModule,
 } from "../src/toolRegistry.js";
@@ -52,11 +51,27 @@ describe("tool registry", () => {
     expect([...names].sort()).toEqual(expected);
   });
 
-  it("exposes a zod object shape and a description for every tool", () => {
+  it("exposes a zod object and a description for every tool", () => {
     for (const tool of allTools) {
-      const shape = toolInputShape(tool);
-      expect(typeof shape).toBe("object");
+      expect(toolInputSchema(tool)).toBeInstanceOf(z.ZodObject);
       expect(tool.description.length).toBeGreaterThan(0);
+    }
+  });
+
+  it("serves every tool schema without $ref", async () => {
+    const server = new McpServer({ name: "test", version: "0" });
+    for (const tool of allTools) {
+      registerTool(server, tool);
+    }
+    const client = await connectClient(server);
+    const { tools } = await client.listTools();
+    await client.close();
+    await server.close();
+
+    expect(tools).toHaveLength(allTools.length);
+    for (const tool of tools) {
+      expect(JSON.stringify(tool.inputSchema)).not.toContain('"$ref"');
+      expect(tool.description).toBeTruthy();
     }
   });
 
@@ -102,7 +117,7 @@ describe("tool registry", () => {
       schema: z.string(),
       execute: async () => null,
     };
-    expect(() => toolInputShape(bad)).toThrow(/must be a zod object/);
+    expect(() => toolInputSchema(bad)).toThrow(/must be a zod object/);
   });
 
   it("registers name, description and schema on an MCP server and forwards results as JSON", async () => {
@@ -111,7 +126,7 @@ describe("tool registry", () => {
       description: "Echo the input back",
       schema: z
         .object({ message: z.string().describe("Text to echo"), times: z.number().default(1) })
-        .refine(() => true),
+        .refine((input) => input.message !== "nope", { message: "nope is not echoed" }),
       execute: async (input: { message: string; times: number }) => ({
         echoed: input.message.repeat(input.times),
       }),
@@ -132,6 +147,11 @@ describe("tool registry", () => {
 
     const result = await client.callTool({ name: "echo", arguments: { message: "ab", times: 2 } });
     expect(result.content).toEqual([{ type: "text", text: JSON.stringify({ echoed: "abab" }) }]);
+
+    // Object-level refinements run at the server, before execute.
+    const refused = await client.callTool({ name: "echo", arguments: { message: "nope" } });
+    expect(refused.isError).toBe(true);
+    expect(JSON.stringify(refused.content)).toContain("nope is not echoed");
 
     await client.close();
     await server.close();
