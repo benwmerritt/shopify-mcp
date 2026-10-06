@@ -17,6 +17,16 @@ const updateMetafieldDefinitionAccess = {
   schema,
   initialize(client: GraphQLClient) { shopifyClient = client; },
   async execute(input: Input) {
+    const before = await shopifyClient.request<{ node: {
+      id: string; namespace: string; key: string; ownerType: string;
+    } | null }>(gql`
+      query ResolveMetafieldDefinitionAccessTarget($id: ID!) {
+        node(id: $id) {
+          ... on MetafieldDefinition { id namespace key ownerType }
+        }
+      }
+    `, { id: input.id });
+    if (before.node?.id !== input.id) throw new Error("Metafield definition not found");
     const data = await shopifyClient.request<{
       metafieldDefinitionUpdate: {
         updatedDefinition: Definition | null;
@@ -29,7 +39,10 @@ const updateMetafieldDefinitionAccess = {
           userErrors { field message }
         }
       }
-    `, { definition: { id: input.id, access: { storefront: input.storefront } } });
+    `, { definition: {
+      namespace: before.node.namespace, key: before.node.key,
+      ownerType: before.node.ownerType, access: { storefront: input.storefront },
+    } });
     const result = data.metafieldDefinitionUpdate;
     if (result.userErrors.length) {
       throw new Error(result.userErrors.map(error => error.message).join(", "));

@@ -9,22 +9,24 @@ describe("update-metafield-definition-access", () => {
   });
   it("updates only access and freshly verifies it", async () => {
     const request = jest.fn()
+      .mockResolvedValueOnce({ node: { id, namespace: "custom", key: "gallery", ownerType: "COLLECTION" } })
       .mockResolvedValueOnce({ metafieldDefinitionUpdate: { updatedDefinition: definition, userErrors: [] } })
       .mockResolvedValueOnce({ node: definition });
     tool.initialize({ request } as never);
     const result = await tool.execute({ id, storefront: "PUBLIC_READ" });
-    expect(request.mock.calls[0][1]).toEqual({ definition: { id, access: { storefront: "PUBLIC_READ" } } });
-    expect(request.mock.calls[1][1]).toEqual({ id });
+    expect(request.mock.calls[1][1]).toEqual({ definition: { namespace: "custom", key: "gallery", ownerType: "COLLECTION", access: { storefront: "PUBLIC_READ" } } });
+    expect(request.mock.calls[2][1]).toEqual({ id });
     expect(result.verified).toEqual(definition);
   });
   it("rejects user errors without a read-back", async () => {
-    const request = jest.fn().mockResolvedValue({ metafieldDefinitionUpdate: { updatedDefinition: null, userErrors: [{ field: ["access"], message: "Denied" }] } });
+    const request = jest.fn().mockResolvedValueOnce({ node: { id, namespace: "custom", key: "gallery", ownerType: "COLLECTION" } }).mockResolvedValueOnce({ metafieldDefinitionUpdate: { updatedDefinition: null, userErrors: [{ field: ["access"], message: "Denied" }] } });
     tool.initialize({ request } as never);
     await expect(tool.execute({ id, storefront: "PUBLIC_READ" })).rejects.toThrow("Denied");
-    expect(request).toHaveBeenCalledTimes(1);
+    expect(request).toHaveBeenCalledTimes(2);
   });
   it.each([null, { ...definition, access: { ...definition.access, storefront: "NONE" } }, { ...definition, id: "gid://shopify/MetafieldDefinition/456" }])("rejects read-back mismatches %j", async node => {
     const request = jest.fn()
+      .mockResolvedValueOnce({ node: { id, namespace: "custom", key: "gallery", ownerType: "COLLECTION" } })
       .mockResolvedValueOnce({ metafieldDefinitionUpdate: { updatedDefinition: definition, userErrors: [] } })
       .mockResolvedValueOnce({ node });
     tool.initialize({ request } as never);
