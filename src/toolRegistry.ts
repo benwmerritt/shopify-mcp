@@ -30,6 +30,7 @@ import { deleteMetafield } from "./tools/deleteMetafield.js";
 import { setMetafield } from "./tools/setMetafield.js";
 import { listMetafieldDefinitions } from "./tools/listMetafieldDefinitions.js";
 import { createMetafieldDefinition } from "./tools/createMetafieldDefinition.js";
+import { updateMetafieldDefinitionAccess } from "./tools/updateMetafieldDefinitionAccess.js";
 import { getMetafieldOptions } from "./tools/getMetafieldOptions.js";
 import { createMetaobject } from "./tools/createMetaobject.js";
 import { updateMetaobject } from "./tools/updateMetaobject.js";
@@ -108,6 +109,7 @@ export const shopifyClientTools = [
   setMetafield,
   listMetafieldDefinitions,
   createMetafieldDefinition,
+  updateMetafieldDefinitionAccess,
   getMetafieldOptions,
   createMetaobject,
   updateMetaobject,
