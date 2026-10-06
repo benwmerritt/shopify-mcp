@@ -52,6 +52,7 @@ describe("products field selection", () => {
         maxPrice: { amount: "12.00", currencyCode: "AUD" },
       },
       images: product.images.edges.map(({ node }) => node),
+      variantsCount: null,
       variants: [{ ...product.variants.edges[0].node, options: [] }],
       collections: product.collections.edges.map(({ node }) => node),
     });
@@ -94,3 +95,29 @@ describe("products field selection", () => {
 });
 
 export {};
+
+describe("products single-product variant paging", () => {
+  it("returns every variant past the first page, and the total count", async () => {
+    const node = (i: number) => ({ id: `variant-${i}`, title: `V${i}`, price: "1.00", inventoryQuantity: 0, sku: `S${i}`, selectedOptions: [] });
+    const first = Array.from({ length: 250 }, (_, i) => ({ node: node(i) }));
+    const second = Array.from({ length: 10 }, (_, i) => ({ node: node(250 + i) }));
+    const product = {
+      id: "gid://shopify/Product/9", title: "Big family", description: "", descriptionHtml: "", handle: "big",
+      status: "DRAFT", vendor: "Keihin", productType: "", category: null, tags: [],
+      createdAt: "", updatedAt: "", totalInventory: 0,
+      images: { edges: [] }, collections: { edges: [] },
+      priceRangeV2: { minVariantPrice: { amount: "1.00", currencyCode: "AUD" }, maxVariantPrice: { amount: "1.00", currencyCode: "AUD" } },
+      variantsCount: { count: 260 },
+      variants: { edges: first, pageInfo: { hasNextPage: true, endCursor: "c1" } },
+    };
+    const request = jest.fn()
+      .mockResolvedValueOnce({ product })
+      .mockResolvedValueOnce({ product: { variants: { edges: second, pageInfo: { hasNextPage: false, endCursor: "c2" } } } });
+    products.initialize({ request } as any);
+    const result = (await products.execute({ id: "9", fields: ["variants", "variantsCount"], limit: 50 } as any)) as any;
+    expect(result.product.variants).toHaveLength(260);
+    expect(result.product.variantsCount).toBe(260);
+    expect(request).toHaveBeenCalledTimes(2);
+    expect(request.mock.calls[1][1]).toEqual({ id: "gid://shopify/Product/9", after: "c1" });
+  });
+});

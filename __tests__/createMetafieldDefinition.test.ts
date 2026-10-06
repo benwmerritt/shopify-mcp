@@ -77,6 +77,58 @@ describe("create-metafield-definition", () => {
     );
   });
 
+  it("accepts typed access permissions and rejects unsupported values", () => {
+    const input = {
+      name: "Gallery", namespace: "custom", key: "gallery",
+      ownerType: "COLLECTION", type: "list.metaobject_reference",
+    };
+    expect(createMetafieldDefinition.schema.parse({
+      ...input, access: { storefront: "PUBLIC_READ" },
+    }).access).toEqual({ storefront: "PUBLIC_READ" });
+    for (const access of [
+      { storefront: "PUBLIC_WRITE" }, { admin: "PUBLIC_READ" },
+      { storefront: "PUBLIC_READ", unsupported: true },
+    ]) {
+      expect(() => createMetafieldDefinition.schema.parse({ ...input, access })).toThrow();
+    }
+  });
+
+  it.each([
+    { storefront: "PUBLIC_READ" as const },
+    { admin: "MERCHANT_READ_WRITE" as const },
+    { admin: "MERCHANT_READ_WRITE" as const, storefront: "PUBLIC_READ" as const },
+  ])("forwards and freshly verifies explicit access %j", async (access) => {
+    const request = jest.fn()
+      .mockResolvedValueOnce({ metafieldDefinitionCreate: { createdDefinition: definition, userErrors: [] } })
+      .mockResolvedValueOnce({ metafieldDefinition: definition });
+    createMetafieldDefinition.initialize({ request } as never);
+    const result = await createMetafieldDefinition.execute({
+      name: definition.name, namespace: definition.namespace, key: definition.key,
+      ownerType: "PRODUCT", type: definition.type.name,
+      description: definition.description, access,
+    });
+    expect(request.mock.calls[0][1].definition.access).toEqual(access);
+    expect(request).toHaveBeenCalledTimes(2);
+    expect(result.verified.access).toEqual(definition.access);
+  });
+
+  it.each([
+    { admin: "MERCHANT_READ_WRITE" as const },
+    { storefront: "PUBLIC_READ" as const },
+  ])("rejects an explicit access read-back mismatch %j", async (access) => {
+    const request = jest.fn()
+      .mockResolvedValueOnce({ metafieldDefinitionCreate: { createdDefinition: definition, userErrors: [] } })
+      .mockResolvedValueOnce({ metafieldDefinition: {
+        ...definition, access: { admin: "MERCHANT_READ", storefront: "NONE" },
+      } });
+    createMetafieldDefinition.initialize({ request } as never);
+    await expect(createMetafieldDefinition.execute({
+      name: definition.name, namespace: definition.namespace, key: definition.key,
+      ownerType: "PRODUCT", type: definition.type.name,
+      description: definition.description, access,
+    })).rejects.toThrow("does not match submitted values");
+  });
+
   it("rejects a verification mismatch", async () => {
     const request = jest
       .fn()

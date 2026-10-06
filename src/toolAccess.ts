@@ -1,7 +1,7 @@
 type ToolRegistrar = (name: string, ...args: unknown[]) => unknown;
 
 type ToolServer = {
-  tool: unknown;
+  tool?: unknown;
   registerTool?: unknown;
 };
 

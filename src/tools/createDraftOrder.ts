@@ -2,18 +2,22 @@ import type { GraphQLClient } from "graphql-request";
 import { gql } from "graphql-request";
 import { z } from "zod";
 
-// Address input schema (reusable)
-const AddressInputSchema = z.object({
-  firstName: z.string().optional(),
-  lastName: z.string().optional(),
-  address1: z.string().optional(),
-  address2: z.string().optional(),
-  city: z.string().optional(),
-  province: z.string().optional(),
-  zip: z.string().optional(),
-  country: z.string().optional(),
-  phone: z.string().optional()
-});
+// Address input schema. A factory rather than a shared constant so each
+// address is its own instance: JSON Schema serialisers may emit a $ref for a
+// reused instance, and not every MCP client resolves $ref. The registry test
+// asserts no served schema contains one.
+const addressInputSchema = () =>
+  z.object({
+    firstName: z.string().optional(),
+    lastName: z.string().optional(),
+    address1: z.string().optional(),
+    address2: z.string().optional(),
+    city: z.string().optional(),
+    province: z.string().optional(),
+    zip: z.string().optional(),
+    country: z.string().optional(),
+    phone: z.string().optional()
+  });
 
 // Line item input schema
 const LineItemInputSchema = z.object({
@@ -53,8 +57,8 @@ const CreateDraftOrderInputSchema = z.object({
   email: z.string().email().optional().describe("Customer email"),
   phone: z.string().optional().describe("Customer phone"),
   customerId: z.string().optional().describe("Existing customer ID to attach"),
-  shippingAddress: AddressInputSchema.optional().describe("Shipping address"),
-  billingAddress: AddressInputSchema.optional().describe("Billing address"),
+  shippingAddress: addressInputSchema().optional().describe("Shipping address"),
+  billingAddress: addressInputSchema().optional().describe("Billing address"),
   appliedDiscount: AppliedDiscountInputSchema.optional().describe("Order-level discount"),
   shippingLine: ShippingLineInputSchema.optional().describe("Shipping method and price"),
   note: z.string().optional().describe("Internal note"),
