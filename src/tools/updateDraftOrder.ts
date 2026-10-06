@@ -2,18 +2,22 @@ import type { GraphQLClient } from "graphql-request";
 import { gql } from "graphql-request";
 import { z } from "zod";
 
-// Address input schema (reusable)
-const AddressInputSchema = z.object({
-  firstName: z.string().optional(),
-  lastName: z.string().optional(),
-  address1: z.string().optional(),
-  address2: z.string().optional(),
-  city: z.string().optional(),
-  province: z.string().optional(),
-  zip: z.string().optional(),
-  country: z.string().optional(),
-  phone: z.string().optional()
-});
+// Address input schema. A factory rather than a shared constant:
+// zod-to-json-schema emits a $ref for every schema instance it has already
+// seen, and not every MCP client resolves $ref. Each address gets its own
+// instance so both are inlined.
+const addressInputSchema = () =>
+  z.object({
+    firstName: z.string().optional(),
+    lastName: z.string().optional(),
+    address1: z.string().optional(),
+    address2: z.string().optional(),
+    city: z.string().optional(),
+    province: z.string().optional(),
+    zip: z.string().optional(),
+    country: z.string().optional(),
+    phone: z.string().optional()
+  });
 
 // Line item input schema
 const LineItemInputSchema = z.object({
@@ -52,8 +56,8 @@ const UpdateDraftOrderInputSchema = z.object({
   email: z.string().email().optional(),
   phone: z.string().optional(),
   customerId: z.string().optional().describe("Change customer"),
-  shippingAddress: AddressInputSchema.optional(),
-  billingAddress: AddressInputSchema.optional(),
+  shippingAddress: addressInputSchema().optional(),
+  billingAddress: addressInputSchema().optional(),
   appliedDiscount: AppliedDiscountInputSchema.optional().describe("Order-level discount"),
   shippingLine: ShippingLineInputSchema.optional(),
   note: z.string().optional(),

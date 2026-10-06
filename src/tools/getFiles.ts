@@ -6,7 +6,12 @@ import { mapShopifyFileNode } from "../files/shopifyFiles.js";
 
 const GetFilesInputSchema = z.object({
   query: z.string().optional().describe("Shopify file search query"),
-  limit: z.number().min(1).max(250).default(50),
+  limit: z
+    .number()
+    .min(1)
+    .max(250)
+    .default(50)
+    .describe("Maximum files to return"),
   cursor: z.string().optional().describe("Pagination cursor"),
   sortKey: z
     .enum([
@@ -17,8 +22,9 @@ const GetFilesInputSchema = z.object({
       "RELEVANCE",
       "UPDATED_AT",
     ])
-    .default("UPDATED_AT"),
-  reverse: z.boolean().default(true),
+    .default("UPDATED_AT")
+    .describe("Sort key for file results"),
+  reverse: z.boolean().default(true).describe("Reverse sort order"),
 });
 
 type GetFilesInput = z.infer<typeof GetFilesInputSchema>;

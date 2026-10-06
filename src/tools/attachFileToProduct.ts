@@ -14,8 +14,16 @@ import {
 const AttachFileToProductInputSchema = z.object({
   fileId: z.string().min(1).describe("Shopify file GID"),
   productId: z.string().min(1).describe("Product ID (numeric or full GID)"),
-  waitUntilReady: z.boolean().default(true),
-  waitTimeoutSeconds: z.number().min(1).max(300).default(30),
+  waitUntilReady: z
+    .boolean()
+    .default(true)
+    .describe("Poll until the Shopify file is READY"),
+  waitTimeoutSeconds: z
+    .number()
+    .min(1)
+    .max(300)
+    .default(30)
+    .describe("Maximum time to wait for READY status"),
 });
 
 type AttachFileToProductInput = z.infer<typeof AttachFileToProductInputSchema>;

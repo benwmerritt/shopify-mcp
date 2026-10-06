@@ -5,7 +5,7 @@ import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
 
 jest.setTimeout(30_000);
 
-async function listServerTools(readOnly: boolean): Promise<string[]> {
+async function listServerTools(readOnly: boolean) {
   const args = [
     "dist/index.js",
     "--domain=test-shop.myshopify.com",
@@ -28,7 +28,7 @@ async function listServerTools(readOnly: boolean): Promise<string[]> {
   try {
     await client.connect(transport);
     const { tools } = await client.listTools();
-    return tools.map(({ name }) => name).sort();
+    return tools;
   } finally {
     await client.close();
   }
@@ -40,10 +40,18 @@ describe("read-only MCP server integration", () => {
   });
 
   it("exposes reads and hides mutations without changing normal mode", async () => {
-    const [readOnlyTools, normalTools] = await Promise.all([
+    const [readOnlyDefinitions, normalDefinitions] = await Promise.all([
       listServerTools(true),
       listServerTools(false),
     ]);
+    const readOnlyTools = readOnlyDefinitions.map(({ name }) => name).sort();
+    const normalTools = normalDefinitions.map(({ name }) => name).sort();
+    const createDefinition = normalDefinitions.find(({ name }) => name === "create-metafield-definition");
+    expect(createDefinition?.inputSchema.properties?.access).toEqual(
+      expect.objectContaining({ type: "object", properties: expect.objectContaining({
+        storefront: expect.objectContaining({ enum: ["NONE", "PUBLIC_READ"] }),
+      }) }),
+    );
 
     expect(readOnlyTools).toEqual(
       expect.arrayContaining(["products", "list-metaobjects", "get-status"]),
@@ -57,6 +65,7 @@ describe("read-only MCP server integration", () => {
       "update-metaobject",
       "update-metaobject-definition",
       "create-metafield-definition",
+      "update-metafield-definition-access",
       "delete-product",
       "set-metafield",
       "upload-local-file",
