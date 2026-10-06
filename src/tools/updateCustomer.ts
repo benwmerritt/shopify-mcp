@@ -4,15 +4,16 @@ import { z } from "zod";
 
 // Input schema for updating a customer
 const UpdateCustomerInputSchema = z.object({
-  id: z.string().regex(/^\d+$/, "Customer ID must be numeric"),
+  id: z
+    .string()
+    .regex(/^\d+$/, "Customer ID must be numeric")
+    .describe("Shopify customer ID, numeric excluding gid prefix"),
   firstName: z.string().optional(),
   lastName: z.string().optional(),
   email: z.string().email().optional(),
   phone: z.string().optional(),
   tags: z.array(z.string()).optional(),
   note: z.string().optional(),
-  // acceptsMarketing field is deprecated as it's not supported in the API
-  acceptsMarketing: z.boolean().optional(),
   taxExempt: z.boolean().optional(),
   metafields: z
     .array(
@@ -44,17 +45,10 @@ const updateCustomer = {
 
   execute: async (input: UpdateCustomerInput) => {
     try {
-      const { id, acceptsMarketing, ...customerFields } = input;
+      const { id, ...customerFields } = input;
 
       // Convert numeric ID to GID format
       const customerGid = `gid://shopify/Customer/${id}`;
-
-      // Log a warning if acceptsMarketing was provided
-      if (acceptsMarketing !== undefined) {
-        console.warn(
-          "The acceptsMarketing field is not supported by the Shopify API and will be ignored"
-        );
-      }
 
       const query = gql`
         mutation customerUpdate($input: CustomerInput!) {
