@@ -75,7 +75,6 @@ export type ToolModule = {
   schema: z.ZodTypeAny;
   // Each tool narrows its own input type; the registry only forwards the
   // arguments the MCP server has already validated against the schema's shape.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   execute: (input: any) => Promise<unknown>;
 };
 

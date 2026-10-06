@@ -29,6 +29,13 @@ function kebabCase(fileBase: string): string {
   return fileBase.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`);
 }
 
+async function connectClient(server: McpServer): Promise<Client> {
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  const client = new Client({ name: "test-client", version: "0" });
+  await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
+  return client;
+}
+
 describe("tool registry", () => {
   const names = allTools.map((tool) => tool.name);
 
@@ -63,9 +70,7 @@ describe("tool registry", () => {
       for (const tool of toolsForMode(remoteMode)) {
         registerTool(server, tool);
       }
-      const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
-      const client = new Client({ name: "test-client", version: "0" });
-      await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
+      const client = await connectClient(server);
       const { tools } = await client.listTools();
       await client.close();
       await server.close();
@@ -114,10 +119,7 @@ describe("tool registry", () => {
 
     const server = new McpServer({ name: "test", version: "0" });
     registerTool(server, echo);
-
-    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
-    const client = new Client({ name: "test-client", version: "0" });
-    await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
+    const client = await connectClient(server);
 
     const { tools } = await client.listTools();
     expect(tools).toHaveLength(1);
