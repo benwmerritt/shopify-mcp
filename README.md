@@ -12,8 +12,10 @@
 
 A Model Context Protocol (MCP) server that connects agents to the Shopify Admin GraphQL API. Use it to browse, edit, and clean up store data via a curated set of tools.
 
-**npm:** `shopify-mcp`  
+**npm:** `@benwmerritt/shopify-mcp`  
 **binary:** `shopify-mcp`
+
+This project started from Ge Li's [shopify-mcp](https://github.com/GeLi2001/shopify-mcp). The unscoped `shopify-mcp` package on npm is theirs and does not include the changes in this repository.
 
 ## Highlights
 
@@ -117,13 +119,13 @@ for those apps.
 3. Start the OAuth flow:
 
 ```bash
-npx shopify-mcp --oauth --domain=your-store.myshopify.com --clientId=xxx --clientSecret=yyy
+npx @benwmerritt/shopify-mcp --oauth --domain=your-store.myshopify.com --clientId=xxx --clientSecret=yyy
 ```
 
 Tokens are stored at `~/.shopify-mcp/tokens.json`. After that, start the server with just the domain:
 
 ```bash
-npx shopify-mcp --domain=your-store.myshopify.com
+npx @benwmerritt/shopify-mcp --domain=your-store.myshopify.com
 ```
 
 Optional: override scopes with `--scopes` or `SHOPIFY_SCOPES`.
@@ -183,7 +185,7 @@ If you completed OAuth locally, remove `SHOPIFY_ACCESS_TOKEN` and keep `--domain
     "shopify": {
       "command": "npx",
       "args": [
-        "shopify-mcp",
+        "@benwmerritt/shopify-mcp",
         "--accessToken",
         "<YOUR_ACCESS_TOKEN>",
         "--domain",
@@ -209,7 +211,7 @@ and `railway.json` so Railway builds and starts it in remote mode out of the box
 
 **1. Get a token locally (one-time):**
 ```bash
-npx shopify-mcp --oauth --domain=your-store.myshopify.com --clientId=xxx --clientSecret=yyy
+npx @benwmerritt/shopify-mcp --oauth --domain=your-store.myshopify.com --clientId=xxx --clientSecret=yyy
 # Token saved to ~/.shopify-mcp/tokens.json
 ```
 
