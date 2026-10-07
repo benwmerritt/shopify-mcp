@@ -1,9 +1,11 @@
 {
-  "name": "shopify-mcp",
+  "name": "@benwmerritt/shopify-mcp",
   "version": "2.0.0",
   "description": "MCP Server for Shopify API, enabling interaction with store data through GraphQL API",
   "main": "dist/index.js",
-  "bin": "dist/index.js",
+  "bin": {
+    "shopify-mcp": "dist/index.js"
+  },
   "type": "module",
   "scripts": {
     "build": "rimraf dist && tsc",
@@ -27,9 +29,8 @@
     "claude"
   ],
   "author": {
-    "name": "Your Name",
-    "email": "your.email@example.com",
-    "url": "https://your-website.com"
+    "name": "Ben Merritt",
+    "url": "https://github.com/benwmerritt"
   },
   "license": "MIT",
   "dependencies": {
@@ -66,13 +67,16 @@
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/GeLi2001/shopify-mcp"
+    "url": "git+https://github.com/benwmerritt/shopify-mcp.git"
   },
   "bugs": {
-    "url": "https://github.com/GeLi2001/shopify-mcp/issues"
+    "url": "https://github.com/benwmerritt/shopify-mcp/issues"
   },
-  "homepage": "https://github.com/GeLi2001/shopify-mcp#readme",
+  "homepage": "https://github.com/benwmerritt/shopify-mcp#readme",
   "engines": {
     "node": ">=20.0.0"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }
