@@ -1,6 +1,6 @@
 {
   "name": "shopify-mcp",
-  "version": "1.0.9",
+  "version": "2.0.0",
   "description": "MCP Server for Shopify API, enabling interaction with store data through GraphQL API",
   "main": "dist/index.js",
   "bin": "dist/index.js",
